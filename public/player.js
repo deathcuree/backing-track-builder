@@ -32,6 +32,8 @@ export class Player {
     this.buffers = new Map(); // sample path -> AudioBuffer (kept across songs; samples are small)
     this.audio = new Map(); // "<song id>/<file>" -> Promise<AudioBuffer>, open song only (audio is big)
     this.strips = new Map(); // track id -> strip of the loaded song
+    this.trackLevels = new Map(); // track id -> { volumeDb, muted, output } as last set
+    this.solo = new Set(); // soloed track ids (none = all heard)
     this.sources = new Set();
     this.clipSegments = []; // { src, gain } for the audio clips currently playing
     this.mix = {};
@@ -98,13 +100,27 @@ export class Player {
     }));
 
     for (const strip of this.strips.values()) strip.dispose();
-    this.strips = new Map(song.tracks.map((t) => [t.id, createTrackStrip(ctx, this.routing, t)]));
+    this.trackLevels = new Map(song.tracks.map((t) => [t.id, { volumeDb: t.volumeDb, muted: t.muted, output: t.output }]));
+    this.strips = new Map(song.tracks.map((t) => [t.id, createTrackStrip(ctx, this.routing, this.#heard(t.id))]));
     return [...this.schedule.warnings, ...failed.sort()];
   }
 
   /** Live change of a track's volume, mute or output. */
   setTrack(track) {
-    this.strips.get(track.id)?.set(track);
+    this.trackLevels.set(track.id, { volumeDb: track.volumeDb, muted: track.muted, output: track.output });
+    this.strips.get(track.id)?.set(this.#heard(track.id));
+  }
+
+  /** Solo: while any track is soloed, only soloed tracks are heard (the click too). Live only. */
+  setSolo(ids) {
+    this.solo = new Set(ids);
+    for (const [id, strip] of this.strips) strip.set(this.#heard(id));
+  }
+
+  // A track's levels with solo applied.
+  #heard(id) {
+    const levels = this.trackLevels.get(id);
+    return { ...levels, muted: levels.muted || (this.solo.size > 0 && !this.solo.has(id)) };
   }
 
   /** Live master levels of the in-ear and main outputs. */

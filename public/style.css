@@ -180,6 +180,10 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .mute[aria-pressed="false"] { background: var(--accent); color: var(--accent-fg); }
 .mute[aria-pressed="true"] { background: var(--panel-3); color: var(--muted); border-color: var(--border); }
 .muted-track .lane { opacity: 0.55; }
+.solo[aria-pressed="true"] { background: #4f8fd6; border-color: #4f8fd6; color: #fff; }
+.solo[aria-pressed="false"] { background: var(--panel-3); color: var(--fg); border-color: var(--border); }
+.ses-buttons { display: flex; gap: 4px; }
+.arrangement.file-over .arr-tracks { outline: 2px dashed var(--select); outline-offset: -4px; }
 .hdr-master { gap: 8px; }
 .hdr-master input[type="range"] { width: 110px; }
 .hdr-master output { width: 44px; font-variant-numeric: tabular-nums; }

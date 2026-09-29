@@ -234,3 +234,33 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
     song opened; → next song; ↑/↓ reorder saved; while playing → ignored and songs disabled; after a
     reload the setlist is still selected; delete needed two clicks.
   - Not yet done: a full rehearsal by ear on the user's laptop.
+
+## BTB-12: Undo/redo, Cmd+S, drag-and-drop import, solo
+
+1. **Undo/redo.** Drag a cue, type a new title, drag a track's volume fader, delete a cue. Cmd/Ctrl+Z
+   undoes them one at a time (a whole drag, a burst of typing or a fader move is one step);
+   Cmd/Ctrl+Shift+Z (or Ctrl+Y) redoes. Undoing everything shows "Saved" again. In a text field,
+   Cmd+Z undoes the typing as usual. Opening another song starts a fresh history.
+2. **Save.** Cmd/Ctrl+S saves (no browser "Save page" dialog).
+3. **Drop audio.** Drag audio files from Finder onto the arrangement: one new track per file, clip at
+   0 s. Drop on an audio lane that has no clip: the file goes into that lane. Other files are listed
+   as "Not added". Dropping a file anywhere else does nothing (the page stays open).
+4. **Solo.** Click S on a track: only that track is heard (the click too, as in Ableton). Click it
+   again: everything is heard. Cmd/Ctrl-click S adds or removes tracks from the solo. Works in both
+   views; never saved with the song and never in the export.
+
+### Results
+- 2026-09-29 (automated, headless Brave via DevTools protocol, real mouse and Cmd key events; player
+  output recorded with a test-only tap on the audio destination):
+  - Step 1: drag of cue "4" (2.4.1 → 3.3.1), title typed in 3 bursts, fader −3/−6/−9/−12, cue "1"
+    deleted → 4 × Cmd+Z undid exactly those four steps in reverse (cue back, fader back to 0, title
+    back, cue at 2.4.1) and the state read "Saved"; a 5th Cmd+Z did nothing; Cmd+Shift+Z redid the drag.
+  - Step 2: Cmd+S → "Saved".
+  - Step 3 (DragEvents with real File objects; headless can't drag from Finder): Pad.wav + notes.txt
+    dropped → a "Pad" track with its clip and 1 heads-up for the .txt; dropped on an empty audio lane →
+    that lane got the clip; a drop on the Browser was prevented and added nothing.
+  - Step 4, peaks per channel (bars 1–2 = click + counts; bars 3+ = song enters):
+    no solo L −4.5/−2.2 dB, R silent/−4.4; solo song → bars 1–2 silent on both sides, song on both after;
+    + Cmd-click Click → click back in bars 1–2; solo Cues only → only the cues (R silent throughout);
+    solo off → as with no solo. The saved song has no solo field.
+  - Not yet done: dragging real files from Finder, and all steps by ear.

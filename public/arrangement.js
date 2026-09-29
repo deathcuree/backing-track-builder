@@ -30,7 +30,10 @@ export const CUE_MIME = 'application/x-btb-cue'; // Browser cue being dragged: J
 /**
  * @param {HTMLElement} el
  * @param {{ onSelect: (sel: { kind: string, ref: object } | null) => void,
- *           onCursor: (at: [number, number, number]) => void, onTrackChange: (track: object) => void,
+ *           onCursor: (at: [number, number, number]) => void,
+ *           onTrackChange: (track: object, field: 'volumeDb'|'muted'|'output') => void,
+ *           onSolo: (track: object, additive: boolean) => void,
+ *           onDropFiles: (files: File[], track: object|null) => void,
  *           onMasterChange: (key: 'inEarsDb'|'mainDb', db: number) => void,
  *           onAdd: (kind: 'locator'|'tempo'|'meter') => void,
  *           onAddAt: (kind: 'locator'|'tempo'|'meter', bar: number) => void,
@@ -208,6 +211,25 @@ export function createArrangement(el, handlers) {
     handlers.onAddAt(lane.dataset.lane, view.grid.positionAt(sec).bar);
   });
 
+  // Audio files dropped on the arrangement: new tracks, or into an audio lane that has no clip.
+  el.addEventListener('dragover', (e) => {
+    if (!e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    el.classList.add('file-over');
+  });
+  el.addEventListener('drop', (e) => {
+    if (!e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    el.classList.remove('file-over');
+    const lane = e.target.closest('.track-audio');
+    const track = lane ? trackById(lane.dataset.track) : null;
+    handlers.onDropFiles([...e.dataTransfer.files], track && !track.clip ? track : null);
+  });
+  el.addEventListener('dragleave', (e) => {
+    if (!el.contains(e.relatedTarget)) el.classList.remove('file-over');
+  });
+
   // Browser cues dropped on the Cues lane.
   el.addEventListener('dragover', (e) => {
     const at = cueDropAt(e);
@@ -253,23 +275,24 @@ export function createArrangement(el, handlers) {
     } else if (field.dataset.field === 'output') {
       track.output = field.value;
     }
-    handlers.onTrackChange(track);
+    handlers.onTrackChange(track, field.dataset.field);
   });
 
   el.addEventListener('click', (e) => {
-    const mute = e.target.closest('[data-field="muted"]');
-    const track = mute && trackById(mute.closest('[data-track]')?.dataset.track);
+    const button = e.target.closest('[data-field="muted"], [data-field="solo"]');
+    const track = button && trackById(button.closest('[data-track]')?.dataset.track);
     if (!track) return;
+    if (button.dataset.field === 'solo') return handlers.onSolo(track, e.metaKey || e.ctrlKey);
     track.muted = !track.muted;
-    mute.setAttribute('aria-pressed', String(track.muted));
-    handlers.onTrackChange(track);
+    button.setAttribute('aria-pressed', String(track.muted));
+    handlers.onTrackChange(track, 'muted');
   });
 
   return {
     /**
      * @param {{ song: object, grid: object, selection: { kind: string, ref: object } | null,
      *           invalid: Set<object>, cursor: [number, number, number], mix: { inEarsDb: number, mainDb: number },
-     *           loop: { startBar: number, endBar: number } | null, loopOn: boolean }} next
+     *           loop: { startBar: number, endBar: number } | null, loopOn: boolean, solo: Set<string> }} next
      */
     render(next) {
       view = next;
@@ -439,6 +462,7 @@ export function createArrangement(el, handlers) {
             <input type="range" data-field="volumeDb" min="${LIMITS.volumeDb[0]}" max="${LIMITS.volumeDb[1]}" step="1" aria-label="${esc(t.name)} volume">
             <output class="small"></output>
             <button type="button" class="mute" data-field="muted" aria-label="Mute ${esc(t.name)}" title="Mute">M</button>
+            <button type="button" class="solo" data-field="solo" aria-label="Solo ${esc(t.name)}" title="Solo (Cmd/Ctrl-click to add)">S</button>
             <select data-field="output" aria-label="${esc(t.name)} output" title="Output">${options(OUTPUTS, t.output, (o) => OUTPUT_NAMES[o])}</select>
           </div>
         </div>
@@ -453,6 +477,7 @@ export function createArrangement(el, handlers) {
     if (document.activeElement !== vol) vol.value = t.volumeDb;
     vol.nextElementSibling.value = formatDb(t.volumeDb);
     row.querySelector('[data-field="muted"]').setAttribute('aria-pressed', String(t.muted));
+    row.querySelector('[data-field="solo"]').setAttribute('aria-pressed', String(view.solo.has(t.id)));
     const out = row.querySelector('[data-field="output"]');
     if (document.activeElement !== out) out.value = t.output;
     row.querySelector('.hdr-name').className = classes(t, 'hdr-name');
@@ -490,7 +515,7 @@ export function createArrangement(el, handlers) {
   }
 
   function clipItem(track) {
-    if (!track.clip) return '<span class="lane-hint muted small">No audio. Use Import audio.</span>';
+    if (!track.clip) return '<span class="lane-hint muted small">No audio. Drop a file here or use Import audio.</span>';
     const info = handlers.getPeaks(track);
     const width = info ? info.duration * pps : 120;
     return `<div class="${classes(track.clip, 'clip')}" data-kind="track" data-track="${esc(track.id)}"
