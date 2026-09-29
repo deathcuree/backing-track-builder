@@ -1,0 +1,44 @@
+{
+  "version": 2,
+  "id": "new-song",
+  "title": "New song",
+  "endBar": 16,
+  "tempo": [
+    {
+      "bar": 1,
+      "bpm": 120
+    }
+  ],
+  "meter": [
+    {
+      "bar": 1,
+      "beats": 4,
+      "unit": 4
+    }
+  ],
+  "locators": [],
+  "tracks": [
+    {
+      "id": "click",
+      "type": "click",
+      "name": "Click",
+      "color": 0,
+      "volumeDb": 0,
+      "muted": false,
+      "output": "inEars",
+      "sound": "Classic",
+      "subdivision": "quarter"
+    },
+    {
+      "id": "cues",
+      "type": "cues",
+      "name": "Cues",
+      "color": 1,
+      "volumeDb": 0,
+      "muted": false,
+      "output": "inEars",
+      "language": "en",
+      "clips": []
+    }
+  ]
+}
