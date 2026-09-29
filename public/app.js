@@ -1,6 +1,6 @@
 import { newSong, validateSong, uniqueId } from '/shared/song.js';
 import { buildSchedule } from '/shared/schedule.js';
-import { createEditor, esc } from './editor.js';
+import { createEditor, esc, formatDb } from './editor.js';
 import { createTimeline } from './timeline.js';
 import { Player } from './player.js';
 
@@ -12,6 +12,7 @@ let song = null;
 let savedJson = null; // JSON of the song as opened or last saved
 let isNew = false; // never saved
 let sectionStarts = [];
+let uploading = false;
 
 const catalogRes = await fetch('/samples/catalog.json').catch(() => null);
 if (!catalogRes?.ok) {
@@ -23,7 +24,7 @@ if (!catalogRes?.ok) {
 }
 
 async function start() {
-  const editor = createEditor($('editor'), { catalog, onChange: changed });
+  const editor = createEditor($('editor'), { catalog, onChange: changed, onAddStems: uploadStems });
   const timeline = createTimeline($('timeline'), { onBarClick: (bar) => editor.addCue(bar) });
   const player = new Player({
     onPosition: (pos) => {
@@ -36,6 +37,10 @@ async function start() {
       if (!playing) $('play-note').textContent = '';
     },
   });
+
+  const settings = await api('GET', '/api/settings');
+  player.setMix(settings.mix);
+  setupMix(settings);
 
   songs = await api('GET', '/api/songs');
   renderSongList();
@@ -67,7 +72,9 @@ async function start() {
     renderSongList();
   }
 
-  function changed() {
+  function changed(path) {
+    const live = path?.match(/^stems\.(\d+)\.(volumeDb|muted)$/);
+    if (live) player.setStemGain(song.stems[Number(live[1])]);
     const errors = validateSong(song);
     editor.showErrors(errors);
     let warnings = [];
@@ -83,7 +90,65 @@ async function start() {
     $('song-title').textContent = song.title || 'Untitled';
     $('save-state').textContent = isNew ? 'Not saved yet' : isDirty() ? 'Unsaved changes' : 'Saved';
     $('save-state').classList.toggle('dirty', isNew || isDirty());
-    if (player.playing) $('play-note').textContent = 'Changes apply the next time you press Play.';
+    if (player.playing && !live) $('play-note').textContent = 'Changes apply the next time you press Play.';
+    updateUploadState();
+  }
+
+  function updateUploadState() {
+    editor.setUpload({
+      enabled: !isNew && !uploading,
+      message: isNew ? 'Save the song first, then add stems.' : uploading ? '' : 'WAV, MP3, M4A, FLAC or OGG.',
+    });
+    $('save').disabled = uploading;
+  }
+
+  // Uploads one file at a time, then adds the stems to the song (saved with the next Save).
+  async function uploadStems(files) {
+    uploading = true;
+    player.stop();
+    const added = [];
+    const failed = [];
+    try {
+      for (const [i, file] of files.entries()) {
+        editor.setUpload({ enabled: false, message: `Uploading ${file.name} (${i + 1} of ${files.length})…` });
+        try {
+          const res = await fetch(`/api/songs/${song.id}/stems`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name) },
+            body: file,
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error ?? res.statusText);
+          added.push(data);
+        } catch (err) {
+          failed.push(`${file.name}: ${err.message}`);
+        }
+      }
+    } finally {
+      uploading = false;
+    }
+    player.forgetStems();
+    if (added.length) editor.addStems(added);
+    else changed();
+    if (failed.length) showMessages(failed.map((f) => `Not added: ${f}`));
+    if (added.length) $('play-note').textContent = `Added ${added.length} stem${added.length > 1 ? 's' : ''}. Press Save to keep ${added.length > 1 ? 'them' : 'it'}.`;
+  }
+
+  function setupMix(current) {
+    let saveTimer;
+    for (const input of document.querySelectorAll('#mix input')) {
+      const key = input.dataset.mix;
+      input.value = current.mix[key];
+      input.nextElementSibling.value = formatDb(current.mix[key]);
+      input.addEventListener('input', () => {
+        const db = Number(input.value);
+        current.mix[key] = db;
+        input.nextElementSibling.value = formatDb(db);
+        player.setMix({ [key]: db });
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => api('PUT', '/api/settings', current).catch(() => {}), 400);
+      });
+    }
   }
 
   async function togglePlay() {
@@ -120,7 +185,11 @@ async function start() {
     }
     savedJson = JSON.stringify(song);
     isNew = false;
-    songs = await api('GET', '/api/songs');
+    const settings = await api('GET', '/api/settings');
+  player.setMix(settings.mix);
+  setupMix(settings);
+
+  songs = await api('GET', '/api/songs');
     renderSongList();
     changed();
     return true;

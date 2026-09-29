@@ -180,6 +180,21 @@ export function nextPosition(song, state, action) {
   }
 }
 
+/**
+ * Where stem audio is when song time `songSec` (bar 1 = 0 s) plays at some moment `when`:
+ * start the stems at `when + delaySec`, `fileOffsetSec` seconds into their files.
+ * A positive `stemOffsetMs` makes stems start later than the click.
+ */
+export function stemStart(songSec, stemOffsetMs = 0) {
+  const fileSec = round(songSec - stemOffsetMs / 1000);
+  return fileSec >= 0 ? { delaySec: 0, fileOffsetSec: fileSec } : { delaySec: -fileSec, fileOffsetSec: 0 };
+}
+
+// Keeps ms-level offsets exact (8 - 0.1 = 7.9, not 7.8999999999999995).
+function round(sec) {
+  return Math.round(sec * 1e9) / 1e9;
+}
+
 const barIndexCache = new WeakMap();
 
 /**

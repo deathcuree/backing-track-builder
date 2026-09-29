@@ -28,3 +28,34 @@ Setup: `npm start`, open http://localhost:4747 in Chrome (or Brave), wear headph
   - UI: create/edit/save, song survives server restart, inline BPM error, French fallback warning,
     unsaved-changes prompt, Play → count-in → bar 1 with moving playhead, Space stops, no console errors.
   - Not yet done by ear on the user's laptop: steps 2–3 above.
+
+## BTB-05: Stems
+
+Setup: a saved song with the right BPM and sections for a MultiTracks song, headphones on.
+
+1. **Upload.** Stems → "+ Add stems…" → pick the song's stem files (WAV/MP3/M4A/FLAC/OGG).
+   Each appears as a row; press Save.
+2. **In sync.** Play: count-in, then the stems start exactly on bar 1 with the click. If they drift
+   or start early/late, adjust "Stem offset (ms)" (positive = stems later) and press Play again.
+3. **Left vs right.** Left ear: click + guide + stems. Right ear: stems only, never click or guide.
+4. **Live mix.** While playing, move a stem's volume and tick Mute: the change is heard within a
+   moment. Switch songs without saving → the Save/Discard prompt appears.
+5. **Output mix.** Sidebar sliders: "Stems in the in-ears" changes only the left side, "Stems to
+   main" only the right. Reload the page: the sliders keep their values.
+6. **Missing file.** Delete a stem file from `songs/<id>/stems/` by hand and press Play: a "Heads up"
+   message names the stem and the click still plays.
+7. **Memory (Chrome Task Manager, Shift+Esc).** Play a song with many stems, switch to another song
+   and play it: the tab's memory drops back instead of adding up.
+
+### Results
+- 2026-09-29 (automated, headless Brave via DevTools protocol, isolated data folder; generated test stem
+  with a 1 kHz burst every 0.5 s; the player's real output recorded with an AudioWorklet tap):
+  - AC 8: right channel (click+guide+stems) minus right channel (stems only) = −∞ dB (identical).
+  - Stems silent during the count-in; first stem hit 1999.93 ms after the first click (expected 2000);
+    +100 ms offset → 2099.93 ms.
+  - Live mute: right channel −92 dB 50 ms after muting; left keeps the click.
+  - Broken, missing and too-short stems give warnings; click keeps playing.
+  - AC 13: after switching songs the player holds only the new song's decoded stems.
+  - UI: stem button disabled until the song is saved; upload via the button; unsupported file named in
+    a message; volume/mute saved; unused uploaded copies removed on Save; output mix persists.
+  - Not yet done: steps 2–5 and 7 by ear / Task Manager on the user's laptop with real MultiTracks stems.

@@ -28,8 +28,8 @@ const MOUNTS = [
   ['/', 'public'],
 ];
 
-export function startServer({ root = PROJECT_ROOT, port = DEFAULT_PORT } = {}) {
-  const server = createServer((req, res) => handle(root, req, res).catch((err) => {
+export function startServer({ root = PROJECT_ROOT, port = DEFAULT_PORT, maxStemBytes } = {}) {
+  const server = createServer((req, res) => handle(root, req, res, { maxStemBytes }).catch((err) => {
     console.error(err);
     if (!res.headersSent) send(res, 500, 'Server error');
   }));
@@ -39,8 +39,8 @@ export function startServer({ root = PROJECT_ROOT, port = DEFAULT_PORT } = {}) {
   });
 }
 
-async function handle(root, req, res) {
-  if (req.url.startsWith('/api/')) return handleApi(root, req, res);
+async function handle(root, req, res, apiOptions) {
+  if (req.url.startsWith('/api/')) return handleApi(root, req, res, apiOptions);
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed');
 
   let path;

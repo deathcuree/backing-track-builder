@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { newSong, validateSong, slugify, uniqueId } from '../shared/song.js';
+import { newSong, validateSong, slugify, uniqueId, sanitizeStemName } from '../shared/song.js';
 
 const paths = (song) => validateSong(song).map((e) => e.path);
 
@@ -68,4 +68,31 @@ test('slugify makes URL-safe ids', () => {
 test('uniqueId avoids existing ids', () => {
   assert.equal(uniqueId('Way Maker', []), 'way-maker');
   assert.equal(uniqueId('Way Maker', ['way-maker', 'way-maker-2']), 'way-maker-3');
+});
+
+test('stems need a safe file name, a name, a volume and a mute flag', () => {
+  const stem = { file: 'Drums.wav', name: 'Drums', volumeDb: -3, muted: false };
+  assert.deepEqual(paths({ ...newSong(), stems: [stem] }), []);
+  assert.deepEqual(paths({ ...newSong(), stems: [{ ...stem, file: '../x.wav' }] }), ['stems[0].file']);
+  assert.deepEqual(paths({ ...newSong(), stems: [{ ...stem, file: 'Drums.exe' }] }), ['stems[0].file']);
+  assert.deepEqual(paths({ ...newSong(), stems: [{ ...stem, name: '' }] }), ['stems[0].name']);
+  assert.deepEqual(paths({ ...newSong(), stems: [{ ...stem, volumeDb: 7 }] }), ['stems[0].volumeDb']);
+  assert.deepEqual(paths({ ...newSong(), stems: [{ ...stem, muted: 'no' }] }), ['stems[0].muted']);
+  assert.deepEqual(paths({ ...newSong(), stems: [stem, { ...stem }] }), ['stems[1].file']);
+});
+
+test('stem offset is -2000 to +2000 ms', () => {
+  assert.deepEqual(paths({ ...newSong(), stemOffsetMs: -2000 }), []);
+  assert.deepEqual(paths({ ...newSong(), stemOffsetMs: 2001 }), ['stemOffsetMs']);
+});
+
+test('sanitizeStemName keeps readable names and rejects unsupported files', () => {
+  assert.equal(sanitizeStemName('Drums.wav'), 'Drums.wav');
+  assert.equal(sanitizeStemName('Way Maker - Keys (Pad).WAV'), 'Way Maker - Keys (Pad).WAV');
+  assert.equal(sanitizeStemName('C:\\Users\\me\\Bass.m4a'), 'Bass.m4a');
+  assert.equal(sanitizeStemName('../../etc/Click Track.mp3'), 'Click Track.mp3');
+  assert.equal(sanitizeStemName('Guitarra Eléctrica #1.flac'), 'Guitarra Electrica _1.flac');
+  assert.equal(sanitizeStemName('..wav'), null);
+  assert.equal(sanitizeStemName('notes.txt'), null);
+  assert.equal(sanitizeStemName('x'.repeat(300) + '.wav'), 'x'.repeat(90) + '.wav');
 });
