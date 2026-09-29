@@ -1,4 +1,4 @@
-// JSON API for songs, audio files ("stems"), setlists, settings and exports. Data lives under the project root:
+// JSON API for songs, audio files ("stems"), setlists, settings and exports. Data lives in the data folder:
 // songs/<id>/song.json, songs/<id>/stems/<file>, setlists/<id>.json, settings.json and
 // exports/<title>.wav, so it can be backed up or edited by hand.
 import { readFile, writeFile, rename, mkdir, readdir, stat, unlink, open } from 'node:fs/promises';
@@ -166,7 +166,7 @@ async function saveExport(root, id, req, maxBytes) {
     const head = await readHead(tmp.path, 12);
     if (!head.startsWith('RIFF') || head.slice(8, 12) !== 'WAVE') throw new HttpError(400, 'Export must be a WAV file');
     await rename(tmp.path, join(dir, name));
-    return { file: name, size: tmp.size };
+    return { file: name, size: tmp.size, folder: dir };
   } catch (err) {
     await unlink(tmp.path).catch(() => {});
     throw err;

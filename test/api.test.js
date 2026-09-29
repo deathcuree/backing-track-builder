@@ -299,7 +299,7 @@ test('exports are saved as exports/<song title>.wav and replace the previous exp
   const wav = Buffer.concat([Buffer.from('RIFF\0\0\0\0WAVE'), Buffer.alloc(100)]);
   const first = await post('/api/exports/way-maker', wav);
   assert.equal(first.status, 200);
-  assert.deepEqual(first.json, { file: 'Way Maker (Live).wav', size: wav.length });
+  assert.deepEqual(first.json, { file: 'Way Maker (Live).wav', size: wav.length, folder: join(root, 'exports') });
   const second = await post('/api/exports/way-maker', Buffer.concat([wav, Buffer.alloc(10)]));
   assert.equal(second.json.size, wav.length + 10);
   assert.equal(readFileSync(join(root, 'exports/Way Maker (Live).wav')).length, wav.length + 10);

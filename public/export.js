@@ -71,7 +71,7 @@ export async function renderSong(song, catalog) {
   };
 }
 
-/** Renders, encodes and saves the export on the server. @returns file name, bytes and warnings */
+/** Renders, encodes and saves the export on the server. @returns file name, its folder, bytes and warnings */
 export async function exportSong(song, catalog) {
   const { channels, sampleRate, seconds, warnings } = await renderSong(song, catalog);
   const bytes = encodeWav(channels, sampleRate);
@@ -82,7 +82,7 @@ export async function exportSong(song, catalog) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? res.statusText);
-  return { file: data.file, bytes, seconds, warnings };
+  return { file: data.file, folder: data.folder, bytes, seconds, warnings };
 }
 
 // How many frames the output chain delays audio: one sample sent through it after the pre-roll.

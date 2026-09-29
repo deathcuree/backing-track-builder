@@ -264,3 +264,22 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
     + Cmd-click Click → click back in bars 1–2; solo Cues only → only the cues (R silent throughout);
     solo off → as with no solo. The saved song has no solo field.
   - Not yet done: dragging real files from Finder, and all steps by ear.
+
+## BTB-13: Data folder outside the project
+
+1. **First start.** `npm start`: the terminal says "Created your data folder: …/Music/Backing Tracks",
+   and, if the project folder still had songs/setlists/settings from older versions, "Copied … into
+   it (the originals are untouched)". Every start prints "Songs, setlists and exports: <folder>".
+2. **Where things go.** Create and save a song, a setlist and an export: they appear in
+   `~/Music/Backing Tracks/songs`, `setlists`, `settings.json` and `exports`. The export note in the app
+   shows that folder. Nothing new appears in the project folder, and `git status` stays clean.
+3. **Git can't touch it.** `git pull`, switching branches, even deleting the project and cloning it
+   again: your songs are still in the Music folder.
+4. **Another folder.** `BTB_DATA_DIR=~/Dropbox/Backing\ Tracks npm start` uses that folder instead
+   (it is created on first use). An existing folder is never filled from the project or overwritten.
+
+### Results
+- 2026-09-29: `npm test` 133 passing (new: data folder choice and preparation, and a server with separate
+  code and data folders). The real start path with `BTB_DATA_DIR` set to a temporary folder: created it,
+  copied the project's old `songs/` in (project copy untouched), a saved song landed there, a second start
+  copied nothing. Not run against the user's real ~/Music folder, so their first start does that.
