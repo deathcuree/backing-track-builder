@@ -210,7 +210,7 @@ async function start(catalog) {
   }
   // Space play/stop · Tab Arrangement/Session · 1–9 launch section · L loop the section heard ·
   // ←/→ previous/next setlist song (stopped) · Delete removes the selection · Esc selects the song ·
-  // +/− zoom
+  // +/− zoom · F full screen
   document.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, select, textarea')) return;
     const digit = e.code.match(/^(?:Digit|Numpad)([1-9])$/);
@@ -223,6 +223,7 @@ async function start(catalog) {
     else if (e.key === 'Escape') select(null);
     else if (e.key === '+' || e.key === '=') arrangement.zoom(1.5);
     else if (e.key === '-') arrangement.zoom(1 / 1.5);
+    else if (e.code === 'KeyF') controlbar.toggleFullscreen();
     else return;
     e.preventDefault();
   });

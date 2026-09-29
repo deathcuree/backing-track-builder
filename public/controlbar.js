@@ -1,5 +1,5 @@
 // Control Bar (top): tempo and time signature at bar 1, tap tempo, transport, position, zoom,
-// import/export and save. Edits go to the song's bar-1 markers through the handlers.
+// import/export, save and full screen. Edits go to the song's bar-1 markers through the handlers.
 import { LIMITS, METER_UNITS } from '/shared/song.js';
 import { options, formatPosition, clock } from './ui.js';
 
@@ -42,6 +42,7 @@ export function createControlBar(el, handlers) {
     <div class="cb-group cb-views" role="group" aria-label="View (Tab switches)">
       <button id="cb-view-arrangement" type="button" aria-pressed="true" title="Arrangement View (Tab)">Arrangement</button>
       <button id="cb-view-session" type="button" aria-pressed="false" title="Session View (Tab)">Session</button>
+      <button id="cb-fullscreen" type="button" aria-pressed="false" title="Full screen: hide the browser's tabs and toolbars (F, Esc to leave)" aria-label="Full screen">⛶</button>
     </div>
     <div class="cb-group">
       <button id="cb-import" type="button" title="Add audio files as new tracks">Import audio</button>
@@ -71,8 +72,15 @@ export function createControlBar(el, handlers) {
   $('cb-import').addEventListener('click', handlers.onImport);
   $('cb-export').addEventListener('click', handlers.onExport);
   $('cb-save').addEventListener('click', handlers.onSave);
+  $('cb-fullscreen').addEventListener('click', toggleFullscreen);
+  $('cb-fullscreen').hidden = !document.fullscreenEnabled;
+  // Esc (or the browser's own control) can leave full screen too, so follow the document.
+  document.addEventListener('fullscreenchange', () => {
+    $('cb-fullscreen').setAttribute('aria-pressed', String(Boolean(document.fullscreenElement)));
+  });
 
   return {
+    toggleFullscreen,
     /** Shows the song's bar-1 tempo and meter (fields being typed in are left alone). */
     render(song) {
       $('cb-title').textContent = song.title || 'Untitled';
@@ -113,6 +121,13 @@ export function createControlBar(el, handlers) {
       $('cb-export').title = exportTitle;
     },
   };
+
+  // The whole page goes full screen, so the browser's tabs, address bar and bookmarks disappear.
+  function toggleFullscreen() {
+    if (!document.fullscreenEnabled) return;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else document.documentElement.requestFullscreen().catch(() => {});
+  }
 
   // Average of the last few tap intervals; a pause longer than 2 s starts over.
   function tap() {
