@@ -65,7 +65,37 @@ export function buildGrid(song) {
         fraction: Math.max(0, within / b.sec),
       };
     },
+    /**
+     * Nearest grid point to `sec` inside the song. `step` is 'bar' or a number of sixteenths (1, 2
+     * or 4 for 1/16, 1/8 and 1/4 notes); steps count from each downbeat. Rounding past a bar's last
+     * grid point lands on the next downbeat.
+     * @returns {[number, number, number]} [bar, beat, sixteenth]
+     */
+    snap(sec, step) {
+      const i = sec <= 0 ? 0 : findBar(bars, Math.min(sec, endSec));
+      const b = bars[i];
+      const next = bars[i + 1];
+      const perBeat = 16 / b.unit;
+      const size = b.beats * perBeat; // sixteenths in the bar
+      const within = ((Math.max(0, sec - b.startSec)) * b.bpm) / 15;
+      const unit = step === 'bar' ? size : step;
+      let k = Math.round(within / unit) * unit;
+      if (k >= size) {
+        if (next && sec < endSec) return [next.bar, 1, 1];
+        k = Math.floor((size - 1) / unit) * unit; // last grid point of the last bar
+      }
+      return [b.bar, Math.floor(k / perBeat) + 1, (k % perBeat) + 1];
+    },
+    /** Bar whose downbeat is closest to `sec`, inside the song. */
+    nearestBar(sec) {
+      return this.snap(sec, 'bar')[0];
+    },
   };
+}
+
+/** Grid step for a zoom level: the finest of 1/16, 1/8, 1/4 or bar with lines ≥ 12 px apart. */
+export function autoStep(pxPerSixteenth) {
+  return [1, 2, 4].find((n) => n * pxPerSixteenth >= 12) ?? 'bar';
 }
 
 function lastPosition(b) {

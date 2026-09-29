@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildGrid } from '../shared/grid.js';
+import { buildGrid, autoStep } from '../shared/grid.js';
 
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg ?? ''} ${a} != ${b}`);
 
@@ -96,5 +96,57 @@ describe('buildGrid', () => {
     assert.throws(() => buildGrid(song({ tempo: [] })), RangeError);
     assert.throws(() => buildGrid(song({ meter: [{ bar: 2, beats: 4, unit: 4 }] })), RangeError);
     assert.throws(() => buildGrid(song({ endBar: 0 })), RangeError);
+  });
+});
+
+describe('snapping', () => {
+  // 4/4 at 120: a sixteenth is 0.125 s, a bar 2 s.
+  const g = buildGrid(song({ endBar: 4 }));
+
+  test('snap to sixteenths, eighths and quarters rounds to the nearest grid point', () => {
+    assert.deepEqual(g.snap(0.3, 1), [1, 1, 3]);
+    assert.deepEqual(g.snap(0.3, 2), [1, 1, 3]);
+    assert.deepEqual(g.snap(0.3, 4), [1, 2, 1]);
+    assert.deepEqual(g.snap(0.2, 4), [1, 1, 1]);
+    assert.deepEqual(g.snap(2.8, 4), [2, 3, 1]);
+  });
+
+  test('rounding past the last grid point of a bar goes to the next downbeat', () => {
+    assert.deepEqual(g.snap(1.9, 4), [2, 1, 1]);
+  });
+
+  test('snap to bars', () => {
+    assert.deepEqual(g.snap(0.9, 'bar'), [1, 1, 1]);
+    assert.deepEqual(g.snap(1.1, 'bar'), [2, 1, 1]);
+  });
+
+  test('clamped inside the song', () => {
+    assert.deepEqual(g.snap(-3, 4), [1, 1, 1]);
+    assert.deepEqual(g.snap(7.99, 4), [4, 4, 1]);
+    assert.deepEqual(g.snap(100, 1), [4, 4, 4]);
+    assert.deepEqual(g.snap(100, 'bar'), [4, 1, 1]);
+  });
+
+  test('x/8: a quarter step is two eighths, and a beat has two sixteenths', () => {
+    const g8 = buildGrid(song({ meter: [{ bar: 1, beats: 7, unit: 8 }] }));
+    assert.deepEqual(g8.snap(0.3, 2), [1, 2, 1]);
+    assert.deepEqual(g8.snap(0.3, 1), [1, 2, 1]);
+    assert.deepEqual(g8.snap(0.55, 4), [1, 3, 1]);
+    // 7/8 = 14 sixteenths; the last quarter-step point inside the bar is at 12 (beat 7)
+    assert.deepEqual(g8.snap(1.6, 4), [1, 7, 1]);
+  });
+
+  test('nearestBar picks the closest downbeat inside the song', () => {
+    assert.equal(g.nearestBar(2.9), 2);
+    assert.equal(g.nearestBar(3.1), 3);
+    assert.equal(g.nearestBar(-1), 1);
+    assert.equal(g.nearestBar(99), 4);
+  });
+
+  test('autoStep: the finest step whose lines are at least 12 px apart', () => {
+    assert.equal(autoStep(13), 1);
+    assert.equal(autoStep(7), 2);
+    assert.equal(autoStep(4), 4);
+    assert.equal(autoStep(2), 'bar');
   });
 });

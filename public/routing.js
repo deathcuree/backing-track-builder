@@ -1,73 +1,93 @@
 // Output routing. Split L/R mode (spec §2.6): the left channel is the in-ear feed, the right
-// channel is the main (audience) feed.
-//   click + guide ──────────────────────────► in-ear (L)
-//   stems ──► in-ear stems level ───────────► in-ear (L)
-//        └──► main stems level ─────────────► main   (R)
-// Click and guide connect only to the in-ear bus, so they can never reach the main output.
-// Each output ends in a safety limiter: click + guide + many stems summed would otherwise clip
-// (distort) in the band's ears. Both feeds pass through the same limiter type, so timing between
-// click and stems is unchanged. Works with AudioContext and OfflineAudioContext.
+// channel is the main (audience) feed. Every track has a strip: its volume/mute, then a switch
+// to the in-ear bus, the main bus or both (the track's output setting).
+//   track ─► volume/mute ─┬─► to in-ears ─► in-ears bus ─► master ─► limiter ─► L
+//                          └─► to main ────► main bus ────► master ─► limiter ─► R
+// Each output ends in a safety limiter: many tracks summed would otherwise clip (distort) in the
+// band's ears. Both feeds pass through the same limiter type, so timing between them is unchanged.
+// Works with AudioContext and OfflineAudioContext.
 
 const RAMP_SEC = 0.01; // level changes settle within ~50 ms without zipper noise
 
 export function createRouting(ctx, mix = {}) {
   const merger = ctx.createChannelMerger(2);
-  const inEar = monoBus(ctx);
+  const inEars = monoBus(ctx);
   const main = monoBus(ctx);
-  const [inEarLimit, inEarOut] = limiter(ctx);
+  const inEarsMaster = ctx.createGain();
+  const mainMaster = ctx.createGain();
+  const [inEarsLimit, inEarsOut] = limiter(ctx);
   const [mainLimit, mainOut] = limiter(ctx);
-  inEar.connect(inEarLimit);
-  main.connect(mainLimit);
-  inEarOut.connect(merger, 0, 0);
+  inEars.connect(inEarsMaster).connect(inEarsLimit);
+  main.connect(mainMaster).connect(mainLimit);
+  inEarsOut.connect(merger, 0, 0);
   mainOut.connect(merger, 0, 1);
   merger.connect(ctx.destination);
+  inEarsMaster.gain.value = levelGain(mix.inEarsDb ?? 0);
+  mainMaster.gain.value = levelGain(mix.mainDb ?? 0);
 
-  const stems = ctx.createGain();
-  const stemsToInEar = ctx.createGain();
-  const stemsToMain = ctx.createGain();
-  stems.connect(stemsToInEar).connect(inEar);
-  stems.connect(stemsToMain).connect(main);
-
-  const routing = {
-    /** Click and guide: in-ears only. */
-    clickGuide: inEar,
-    /** All stems: to in-ears and main, each at its own master level. */
-    stems,
-    /** The merged stereo output (L = in-ear, R = main), for metering. */
+  return {
+    /** Track strips connect to these buses. */
+    inEars,
+    main,
+    /** The merged stereo output (L = in-ears, R = main), for metering. */
     output: merger,
-    /** @param {{ inEarStemsDb?: number, mainStemsDb?: number }} levels */
-    setMix({ inEarStemsDb, mainStemsDb }) {
-      if (inEarStemsDb !== undefined) setLevel(ctx, stemsToInEar.gain, inEarStemsDb);
-      if (mainStemsDb !== undefined) setLevel(ctx, stemsToMain.gain, mainStemsDb);
+    /** Master levels. @param {{ inEarsDb?: number, mainDb?: number }} levels */
+    setMix({ inEarsDb, mainDb }) {
+      if (inEarsDb !== undefined) setLevel(ctx, inEarsMaster.gain, inEarsDb);
+      if (mainDb !== undefined) setLevel(ctx, mainMaster.gain, mainDb);
     },
     dispose() {
-      for (const node of [merger, inEar, main, inEarLimit, inEarOut, mainLimit, mainOut, stems, stemsToInEar, stemsToMain]) {
+      for (const node of [merger, inEars, main, inEarsMaster, mainMaster, inEarsLimit, inEarsOut, mainLimit, mainOut]) {
         node.disconnect();
       }
     },
   };
-  stemsToInEar.gain.value = dbToGain(mix.inEarStemsDb ?? 0);
-  stemsToMain.gain.value = dbToGain(mix.mainStemsDb ?? 0);
-  return routing;
 }
 
 /**
- * Export layout (spec §2.7) for a backup file played through a Y-cable:
- *   click + guide ──► left      stems ──► right
- * Each side ends in the same safety limiter as live playback.
+ * Export layout (spec §2.7): the same left = in-ears / right = main split as live playback, each
+ * side ending in the same safety limiter, without the master levels (those are for the room).
  */
 export function createExportRouting(ctx) {
   const merger = ctx.createChannelMerger(2);
-  const left = monoBus(ctx);
-  const right = monoBus(ctx);
+  const inEars = monoBus(ctx);
+  const main = monoBus(ctx);
   const [leftLimit, leftOut] = limiter(ctx);
   const [rightLimit, rightOut] = limiter(ctx);
-  left.connect(leftLimit);
-  right.connect(rightLimit);
+  inEars.connect(leftLimit);
+  main.connect(rightLimit);
   leftOut.connect(merger, 0, 0);
   rightOut.connect(merger, 0, 1);
   merger.connect(ctx.destination);
-  return { clickGuide: left, stems: right };
+  return { inEars, main };
+}
+
+/**
+ * One track's strip into `buses` ({ inEars, main }). Connect the track's sources to `input`.
+ * @param {{ volumeDb: number, muted: boolean, output: 'inEars'|'main'|'both' }} track
+ */
+export function createTrackStrip(ctx, buses, track) {
+  const input = ctx.createGain();
+  const toInEars = ctx.createGain();
+  const toMain = ctx.createGain();
+  input.connect(toInEars).connect(buses.inEars);
+  input.connect(toMain).connect(buses.main);
+  const apply = ({ volumeDb, muted, output }, set) => {
+    set(input.gain, muted ? -Infinity : volumeDb);
+    set(toInEars.gain, output === 'main' ? -Infinity : 0);
+    set(toMain.gain, output === 'inEars' ? -Infinity : 0);
+  };
+  apply(track, (param, db) => { param.value = levelGain(db); });
+  return {
+    input,
+    /** Live change of volume, mute or output (heard within ~50 ms). */
+    set(next) {
+      apply(next, (param, db) => setLevel(ctx, param, db));
+    },
+    dispose() {
+      for (const node of [input, toInEars, toMain]) node.disconnect();
+    },
+  };
 }
 
 export function dbToGain(db) {
@@ -76,7 +96,11 @@ export function dbToGain(db) {
 
 /** Smoothly moves an AudioParam to `db` (−60 dB and below is silence). */
 export function setLevel(ctx, param, db) {
-  param.setTargetAtTime(db <= -60 ? 0 : dbToGain(db), ctx.currentTime, RAMP_SEC);
+  param.setTargetAtTime(levelGain(db), ctx.currentTime, RAMP_SEC);
+}
+
+function levelGain(db) {
+  return db <= -60 ? 0 : dbToGain(db);
 }
 
 const LIMIT_THRESHOLD_DB = -3;

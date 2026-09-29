@@ -1,9 +1,10 @@
-// WAV export: renders a saved song offline (no count-in, from bar 1) into a stereo backup file:
-// left = click + guide, right = stems at their saved volume/mute and offset. Uses the same
-// schedule and stem timing as live playback, so the file matches what the band hears.
-import { buildSchedule, stemStart } from '/shared/schedule.js';
+// WAV export: renders a saved song offline from bar 1 to the song end into a stereo backup file:
+// left = tracks routed to the in-ears (or both), right = tracks routed to main (or both), each at
+// its saved volume and mute. Uses the same schedule and clip timing as live playback, so the file
+// matches what the band hears. Solo and the master levels are live-only and don't apply.
+import { buildSchedule, clipStart } from '/shared/schedule.js';
 import { encodeWav } from '/shared/wav.js';
-import { createExportRouting, dbToGain } from './routing.js';
+import { createExportRouting, createTrackStrip } from './routing.js';
 
 const SAMPLE_RATE = 44100;
 // The safety limiter delays audio slightly (6 ms in Chrome) and needs a moment to settle, so the
@@ -14,17 +15,20 @@ const PREROLL_SEC = 0.1;
  * @returns {Promise<{ channels: Float32Array[], sampleRate: number, seconds: number, warnings: string[] }>}
  */
 export async function renderSong(song, catalog) {
-  const schedule = buildSchedule(song, catalog, { countIn: false });
+  const schedule = buildSchedule(song, catalog);
   const songFrames = Math.ceil(schedule.totalSec * SAMPLE_RATE);
   const prerollFrames = Math.round(PREROLL_SEC * SAMPLE_RATE);
   const latencyFrames = await measureLatency();
   const ctx = new OfflineAudioContext(2, prerollFrames + latencyFrames + songFrames, SAMPLE_RATE);
   const t0 = prerollFrames / SAMPLE_RATE;
   const routing = createExportRouting(ctx);
+  const strips = new Map(song.tracks.map((t) => [t.id, createTrackStrip(ctx, routing, t)]));
+  const audible = (trackId) => !song.tracks.find((t) => t.id === trackId)?.muted;
   const warnings = [...schedule.warnings];
 
   const buffers = new Map();
-  await Promise.all([...new Set(schedule.events.map((e) => e.sample))].map(async (sample) => {
+  const samples = new Set(schedule.events.filter((e) => audible(e.track)).map((e) => e.sample));
+  await Promise.all([...samples].map(async (sample) => {
     try {
       buffers.set(sample, await decode(ctx, '/samples/' + sample.split('/').map(encodeURIComponent).join('/')));
     } catch {
@@ -33,29 +37,27 @@ export async function renderSong(song, catalog) {
   }));
   for (const e of schedule.events) {
     const buffer = buffers.get(e.sample);
-    if (!buffer) continue;
+    if (!buffer || !audible(e.track)) continue;
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    const gain = ctx.createGain();
-    gain.gain.value = dbToGain(e.gainDb);
-    src.connect(gain).connect(routing.clickGuide);
+    src.connect(strips.get(e.track).input);
     src.start(t0 + e.t);
   }
 
-  const { delaySec, fileOffsetSec } = stemStart(0, song.stemOffsetMs);
-  await Promise.all(song.stems.filter((s) => !s.muted).map(async (stem) => {
+  await Promise.all(schedule.clips.filter((c) => audible(c.track)).map(async (clip) => {
     let buffer;
     try {
-      buffer = await decode(ctx, `/api/songs/${song.id}/stems/${encodeURIComponent(stem.file)}`);
+      buffer = await decode(ctx, `/api/songs/${song.id}/stems/${encodeURIComponent(clip.file)}`);
     } catch {
-      warnings.push(`Stem "${stem.name}" could not be loaded; it is missing from the export.`);
+      const name = song.tracks.find((t) => t.id === clip.track)?.name ?? clip.file;
+      warnings.push(`Audio "${name}" could not be loaded; it is missing from the export.`);
       return;
     }
+    const { delaySec, fileOffsetSec } = clipStart(clip.startSec, 0);
+    if (fileOffsetSec >= buffer.duration) return;
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    const gain = ctx.createGain();
-    gain.gain.value = dbToGain(stem.volumeDb);
-    src.connect(gain).connect(routing.stems);
+    src.connect(strips.get(clip.track).input);
     src.start(t0 + delaySec, fileOffsetSec);
   }));
 
@@ -94,7 +96,7 @@ async function measureLatency() {
   impulse.getChannelData(0)[0] = 0.5;
   const src = ctx.createBufferSource();
   src.buffer = impulse;
-  src.connect(routing.clickGuide);
+  src.connect(routing.inEars);
   src.start(frames / SAMPLE_RATE);
   const left = (await ctx.startRendering()).getChannelData(0);
   const arrived = left.findIndex((v) => Math.abs(v) > 1e-6);

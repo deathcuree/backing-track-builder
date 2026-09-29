@@ -16,60 +16,13 @@
   </section>
 
   <div id="app" class="app">
-    <header class="topbar">
-      <div class="brand">Backing Track Builder</div>
-      <div class="views" role="group" aria-label="View">
-        <button id="view-edit" type="button" aria-pressed="true">Edit</button>
-        <button id="view-live" type="button" aria-pressed="false">Live</button>
-      </div>
-      <div class="transport">
-        <button id="play" type="button" class="primary play" aria-pressed="false">▶ Play</button>
-        <div>
-          <div id="position" class="position" aria-live="off">Stopped</div>
-          <div id="play-note" class="muted small" aria-live="polite"></div>
-        </div>
-      </div>
-      <p class="muted small routing-note">Split mode: left = in-ears (click, guide, stems) · right = main (stems only).</p>
-    </header>
-
-    <aside id="edit-side" class="sidebar">
-      <button id="new-song" type="button">+ New song</button>
-      <h2>Songs</h2>
-      <ul id="song-list" class="song-list"></ul>
-      <h2>Output mix</h2>
-      <div id="mix" class="mix">
-        <div class="field">
-          <label for="mix-inear">Stems in the in-ears</label>
-          <span class="volume"><input id="mix-inear" data-mix="inEarStemsDb" type="range" min="-60" max="6" step="1" value="0"><output for="mix-inear">0 dB</output></span>
-        </div>
-        <div class="field">
-          <label for="mix-main">Stems to main (audience)</label>
-          <span class="volume"><input id="mix-main" data-mix="mainStemsDb" type="range" min="-60" max="6" step="1" value="0"><output for="mix-main">0 dB</output></span>
-        </div>
-      </div>
-    </aside>
-
-    <main id="edit-main" class="main">
-      <div id="notice" class="notice" role="alert" hidden></div>
-      <div class="song-header">
-        <h1 id="song-title">Song</h1>
-        <span id="save-state" class="save-state"></span>
-        <button id="export" type="button" title="Save a stereo WAV: click + guide left, stems right">Export WAV</button>
-        <button id="save" type="button" class="primary">Save</button>
-      </div>
-      <section id="timeline" aria-label="Timeline"></section>
-      <section id="messages" class="messages" aria-live="polite" hidden></section>
-      <form id="editor" class="editor" novalidate></form>
-    </main>
-
-    <aside id="live-side" class="sidebar" hidden>
-      <div id="live-setlist-picker" class="live-picker"></div>
-      <div id="live-setlist"></div>
-    </aside>
-    <main id="live-main" class="main" hidden>
-      <div id="live-show" class="live-show"></div>
-      <section id="live-messages" class="messages" aria-live="polite" hidden></section>
-    </main>
+    <header id="controlbar" class="controlbar" aria-label="Control bar"></header>
+    <aside id="browser" class="browser" aria-label="Browser"></aside>
+    <main id="arrangement" class="arrangement" aria-label="Arrangement"></main>
+    <section id="detail" class="detail" aria-label="Detail"></section>
+    <footer id="statusbar" class="statusbar" aria-live="polite"></footer>
+    <div id="notice" class="notice" role="alert" hidden></div>
+    <input id="import-files" type="file" multiple hidden>
   </div>
 
   <script type="module" src="/app.js"></script>

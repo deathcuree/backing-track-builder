@@ -108,3 +108,62 @@ Setup: three saved songs (at least one with stems), headphones on. Click **Live*
   - Export button → exports/Way Maker (Live).wav; `afinfo`: WAVE, 2 ch, 44100 Hz, Int16, 40.000000 s;
     read back independently with Python: click at 0.045 ms left, stem at 0.045 ms right, silence between.
   - Not yet done: playing the file in QuickTime / on a phone by ear (steps 2–4).
+
+> From BTB-09 on, the Edit/Live views and the old song format are gone. The BTB-04 to BTB-07 steps
+> above describe that older UI; the timing, routing and export checks they record still apply to
+> the new engine through the sections below.
+
+## BTB-09: Arrangement View, playback and export
+
+Setup: `npm start`, open http://localhost:4747 in Chrome (or Brave), wear headphones. Have a song
+recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
+
+1. **Build a song.** Browser → **+ New**. In the Detail panel type the title; in the Control Bar
+   type or **Tap** the BPM and pick the time signature. **Import audio** → pick the song: it is
+   saved first, an audio track with its waveform appears, and the end bar grows to fit it.
+2. **Line it up.** Select the audio track and change **Clip start (s)** until the song's first
+   downbeat sits on bar 3 (zoom with −/+ or Cmd/Ctrl + scroll to check the waveform against the grid).
+3. **Count-in and cues.** Click the bar ruler at bar 2 (the orange start marker moves there). Click
+   Counts → 1, 2, 3, 4 in the Browser; set each one's beat in the Detail panel. Add a section cue
+   ("Intro") and a dynamic cue ("Build") the same way.
+4. **Locators and markers.** With the start marker on bar 3, **+** on the Locators strip → name it
+   "Intro". Add a time signature marker where the song changes meter (e.g. 3/4) and a tempo marker if it
+   changes tempo. Bars after a meter marker get narrower or wider.
+5. **Problems.** Put a cue on a beat that doesn't exist (beat 4 in a 3/4 bar): it is outlined in red,
+   the status bar names the problem (click it to select the cue), and Play and Save are refused.
+   Delete it (Delete key or the Detail panel's Delete).
+6. **Play.** Click the bar ruler at bar 1, press Space: you hear the click from bar 1, the counts
+   on bar 2, and the song from bar 3 exactly on the click. The playhead follows. Stop with Space.
+7. **Live levels.** While playing: the track volume sliders and M buttons change what you hear within
+   a moment; set the song's output to **In-ears** and the right ear goes silent; set the Click to **Main**
+   and it moves to the right ear. The **In-ears** and **Main** master sliders survive a reload.
+8. **Export.** Save, then **Export WAV**: left = everything routed to In-ears or Both, right =
+   everything routed to Main or Both, from bar 1 to the end bar.
+9. **Insert marker.** Click anywhere in the arrangement (an empty lane, inside a waveform, or the bar
+   ruler): a steady line and the orange triangle mark the spot, snapped to the grid for the zoom
+   (Cmd/Ctrl-click for sixteenths), and the position box shows it. Click a Browser cue: it lands on the
+   marker. **+** on Locators/Tempo/Time sig. adds at the marker's bar. Press Play: playback starts at
+   the marker, even in the middle of a bar; Stop returns to it.
+
+### Results
+- 2026-09-29 (automated, headless Brave via DevTools protocol, isolated data folder; a generated
+  21 s test "song": 1.0 s of silence, then a 1 kHz burst every 0.5 s):
+  - Steps 1–5 driven through the real UI: save → import (upload, waveform, 3 tracks) → clip start 3.0 s →
+    counts 1–4 on bar 2 and "Intro" at 2.3.3 → locators Intro (bar 3) and Verse 1 (bar 7) → 3/4 marker
+    at bar 7 → "Build" on beat 4 of bar 7 outlined in red, status "Bar 7 has 3 beats; beat 4 doesn't
+    exist.", Play refused, deleted → saved. The song.json on disk matches.
+  - Step 6: Play from bar 1 → after 2.6 s the position reads 2. 2. 1 and the playhead is at 0:02; no
+    console errors.
+  - Step 7 (offline render of the real routing, −12 dB track): −24.0 dB on both sides before; muted →
+    −60 dB 50 ms later; output In-ears → right −61.5 dB 50 ms later; In-ears master −6 → left −29.9 dB.
+  - Step 8: exported Test Song.wav is 27.000 s (6 bars × 2 s in 4/4 + 10 bars × 1.5 s in 3/4). Right
+    channel: 40 bursts from exactly 4.000 s (bar 3), no click. Left: click onsets every 0.500 s from
+    0.000 s, continuing through the 3/4 change at 12.000 s.
+  - Zoom: Cmd/Ctrl + wheel and −/+ change the width around the pointer; deep zoom shows sixteenth
+    lines with the test bursts on the beat lines.
+  - Step 9 (added after review, 2026-09-29): click inside the waveform at 9.3 s → marker 5.4.1 (1/4
+    grid at that zoom) and the audio track selected; Cmd-click in the Click lane → 5.3.3; Browser
+    "Build" added at 5.3.3; + Locator → bar 5. Play from 5.3.3 (9.25 s): position 5. 3. 4 right after
+    Play; recorded output: the Build cue at the start, then the next beats at +0.25 s, +0.75 s, … on both
+    the click and the song (in step); Stop → back at 5. 3. 3.
+  - Not yet done: steps 1–9 by ear with a real song on the user's laptop.

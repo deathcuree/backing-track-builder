@@ -43,7 +43,12 @@ function call(method, path, body, headers = {}) {
   });
 }
 
-const song = (overrides = {}) => ({ ...newSong(), id: 'way-maker', title: 'Way Maker', bpm: 68, ...overrides });
+const song = (overrides = {}) => ({ ...newSong(), id: 'way-maker', title: 'Way Maker', tempo: [{ bar: 1, bpm: 68 }], ...overrides });
+
+const audioTrack = (id, file) => ({
+  id, type: 'audio', name: file.replace(/\.wav$/, ''), color: 2, volumeDb: 0, muted: false, output: 'both',
+  clip: { file, startSec: 0 },
+});
 
 test('an empty library lists no songs', async () => {
   const r = await call('GET', '/api/songs');
@@ -68,19 +73,34 @@ test('save, load and list a song; it survives a server restart', async () => {
   const list = await call('GET', '/api/songs');
   assert.deepEqual(list.json.map((s) => s.title), ['Amazing Grace', 'Way Maker']);
   assert.deepEqual(Object.keys(list.json[0]).sort(), ['bpm', 'id', 'meter', 'title']);
+  assert.deepEqual(list.json[1], { id: 'way-maker', title: 'Way Maker', bpm: 68, meter: [4, 4] });
+});
+
+test('the song list shows bpm and meter from the bar-1 markers and hides old-format songs', async () => {
+  await call('PUT', '/api/songs/odd-time', song({
+    id: 'odd-time', title: 'Odd Time', tempo: [{ bar: 1, bpm: 72 }, { bar: 5, bpm: 90 }],
+    meter: [{ bar: 1, beats: 6, unit: 8 }, { bar: 3, beats: 4, unit: 4 }],
+  }));
+  mkdirSync(join(root, 'songs/old-song'), { recursive: true });
+  writeFileSync(join(root, 'songs/old-song/song.json'), JSON.stringify({ version: 1, id: 'old-song', title: 'Old', bpm: 120, meter: [4, 4] }));
+  const list = (await call('GET', '/api/songs')).json;
+  assert.deepEqual(list.find((s) => s.id === 'odd-time'), { id: 'odd-time', title: 'Odd Time', bpm: 72, meter: [6, 8] });
+  assert.ok(!list.some((s) => s.id === 'old-song'));
 });
 
 test('saved files are readable, hand-editable JSON', async () => {
-  await call('PUT', '/api/songs/way-maker', song({ bpm: 70 }));
+  await call('PUT', '/api/songs/way-maker', song({ endBar: 70 }));
   const onDisk = readFileSync(join(root, 'songs/way-maker/song.json'), 'utf8');
-  assert.match(onDisk, /\n {2}"bpm": 70,\n/);
+  assert.match(onDisk, /\n {2}"endBar": 70,\n/);
 });
 
 test('invalid songs are refused with the validation errors', async () => {
-  const r = await call('PUT', '/api/songs/way-maker', song({ bpm: 500 }));
+  const r = await call('PUT', '/api/songs/way-maker', song({ tempo: [{ bar: 1, bpm: 500 }] }));
   assert.equal(r.status, 400);
-  assert.deepEqual(r.json.errors.map((e) => e.path), ['bpm']);
-  assert.equal((await call('GET', '/api/songs/way-maker')).json.bpm, 70);
+  assert.deepEqual(r.json.errors.map((e) => e.path), ['tempo[0].bpm']);
+  assert.equal((await call('GET', '/api/songs/way-maker')).json.tempo[0].bpm, 68);
+  const old = await call('PUT', '/api/songs/way-maker', { version: 1, id: 'way-maker', title: 'Old', bpm: 120 });
+  assert.equal(old.status, 400);
 });
 
 test('the id in the body must match the URL', async () => {
@@ -120,17 +140,24 @@ test('ids that could escape the songs folder are rejected', async () => {
   assert.equal(readFileSync(join(root, 'secret.json'), 'utf8'), '{"secret":true}');
 });
 
-test('settings default to split routing and persist', async () => {
+test('settings default to split routing and master levels of 0 dB, and persist', async () => {
   const first = await call('GET', '/api/settings');
-  assert.deepEqual(first.json, { version: 1, routing: { mode: 'split' }, mix: { inEarStemsDb: 0, mainStemsDb: 0 } });
-  const put = await call('PUT', '/api/settings', { version: 1, routing: { mode: 'interface' }, mix: { inEarStemsDb: -6, mainStemsDb: 0 } });
+  assert.deepEqual(first.json, { version: 2, routing: { mode: 'split' }, mix: { inEarsDb: 0, mainDb: 0 } });
+  const put = await call('PUT', '/api/settings', { version: 2, routing: { mode: 'interface' }, mix: { inEarsDb: -6, mainDb: 0 } });
   assert.equal(put.status, 200);
   server.close();
   await start();
   assert.equal((await call('GET', '/api/settings')).json.routing.mode, 'interface');
-  assert.equal((await call('GET', '/api/settings')).json.mix.inEarStemsDb, -6);
-  assert.equal((await call('PUT', '/api/settings', { version: 1, routing: { mode: 'split' }, mix: { inEarStemsDb: 9, mainStemsDb: 0 } })).status, 400);
-  assert.equal((await call('PUT', '/api/settings', { version: 1, routing: { mode: 'loud' } })).status, 400);
+  assert.equal((await call('GET', '/api/settings')).json.mix.inEarsDb, -6);
+  assert.equal((await call('PUT', '/api/settings', { version: 2, routing: { mode: 'split' }, mix: { inEarsDb: 0, mainDb: 9 } })).status, 400);
+  assert.equal((await call('PUT', '/api/settings', { version: 2, routing: { mode: 'loud' } })).status, 400);
+});
+
+test('old mix keys in settings are ignored', async () => {
+  writeFileSync(join(root, 'settings.json'), JSON.stringify({ version: 1, routing: { mode: 'split' }, mix: { inEarStemsDb: -12, mainStemsDb: -3 } }));
+  assert.deepEqual((await call('GET', '/api/settings')).json.mix, { inEarsDb: 0, mainDb: 0 });
+  const put = await call('PUT', '/api/settings', { version: 2, routing: { mode: 'split' }, mix: { inEarStemsDb: -12, mainDb: -1 } });
+  assert.deepEqual(put.json.mix, { inEarsDb: 0, mainDb: -1 });
 });
 
 test('unsupported methods and unknown API routes', async () => {
@@ -208,11 +235,13 @@ test('stem paths cannot escape the stems folder', async () => {
   assert.ok(existsSync(join(root, 'songs/way-maker/song.json')));
 });
 
-test('saving a song removes uploaded stem files it no longer uses', async () => {
+test('saving a song removes uploaded audio files no audio clip uses', async () => {
   const keep = await upload('way-maker', 'Keep.wav', Buffer.from('k'));
   const drop = await upload('way-maker', 'Drop.wav', Buffer.from('d'));
-  const stem = (file) => ({ file, name: file.replace(/\.wav$/, ''), volumeDb: 0, muted: false });
-  const saved = await call('PUT', '/api/songs/way-maker', song({ stems: [stem(keep.json.file), stem('Missing.wav')] }));
+  const base = song();
+  const saved = await call('PUT', '/api/songs/way-maker', song({
+    tracks: [...base.tracks, audioTrack('a1', keep.json.file), audioTrack('a2', 'Missing.wav')],
+  }));
   assert.equal(saved.status, 200);
   const files = readdirSync(join(root, 'songs/way-maker/stems'));
   assert.ok(files.includes('Keep.wav'));
@@ -221,7 +250,7 @@ test('saving a song removes uploaded stem files it no longer uses', async () => 
 
 test('overlapping saves all succeed', async () => {
   const puts = Array.from({ length: 8 }, (_, i) =>
-    call('PUT', '/api/settings', { version: 1, routing: { mode: 'split' }, mix: { inEarStemsDb: -i, mainStemsDb: 0 } }));
+    call('PUT', '/api/settings', { version: 2, routing: { mode: 'split' }, mix: { inEarsDb: -i, mainDb: 0 } }));
   const results = await Promise.all(puts);
   assert.deepEqual(results.map((r) => r.status), Array(8).fill(200));
   const songs = await Promise.all(Array.from({ length: 5 }, () => call('PUT', '/api/songs/way-maker', song())));

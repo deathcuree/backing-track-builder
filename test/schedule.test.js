@@ -1,8 +1,9 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildSchedule, secAtBar, barAt, initialPlayState, nextPosition, barEvents, stemStart,
+  buildSchedule, initialPlayState, nextPosition, barEvents, clipStart, sectionAt,
 } from '../shared/schedule.js';
+import { newSong } from '../shared/song.js';
 
 const catalog = {
   clicks: {
@@ -26,292 +27,279 @@ const catalog = {
 };
 
 function song(overrides = {}) {
-  return {
-    version: 1, id: 't', title: 'T', bpm: 120, meter: [4, 4],
-    click: { sound: 'Classic', subdivision: 'quarter', volumeDb: 0 },
-    guide: { language: 'en', volumeDb: 0 },
-    countInBars: 1,
-    sections: [{ name: 'Intro', bars: 4 }, { name: 'Verse 1', bars: 8 }],
-    cues: [], stems: [], stemOffsetMs: 0,
-    ...overrides,
-  };
+  const s = newSong();
+  s.id = 't';
+  s.title = 'T';
+  s.endBar = 2;
+  return Object.assign(s, overrides);
 }
 
+const cuesTrack = (s) => s.tracks.find((t) => t.type === 'cues');
+const clickTrack = (s) => s.tracks.find((t) => t.type === 'click');
 const clicks = (s) => s.events.filter((e) => e.kind === 'click');
-const guides = (s) => s.events.filter((e) => e.kind === 'guide');
+const cues = (s) => s.events.filter((e) => e.kind === 'cue');
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg ?? ''} ${a} != ${b}`);
 
-describe('buildSchedule', () => {
-  // AC 2: 4/4 @120, [Intro 4, Verse 1 8], count-in 1. t0 = 2.0 s.
-  test('AC 2: click grid, accents, section cues and end time', () => {
+describe('buildSchedule: click', () => {
+  test('4/4 at 120: a hit on every beat, accent on beat 1, from bar 1 to the end bar', () => {
     const s = buildSchedule(song(), catalog);
-    assert.equal(s.t0, 2);
     const c = clicks(s);
-    assert.equal(c.length, 13 * 4);
-    c.forEach((e, i) => near(e.t, i * 0.5, `click ${i}`));
-    for (const e of c) assert.equal(e.sample, e.t % 2 === 0 ? 'c/A' : 'c/Q');
-    const g = guides(s);
-    assert.deepEqual(g.filter((e) => e.role === 'section').map((e) => [e.t, e.sample, e.bar]),
-      [[0, 'en/Intro', 0], [8, 'en/Verse 1', 4]]);
-    assert.equal(s.totalSec, 26);
-    assert.deepEqual(s.sections.map(({ name, startBar, bars, startSec, endSec }) =>
-      ({ name, startBar, bars, startSec, endSec })), [
-      { name: 'Intro', startBar: 1, bars: 4, startSec: 2, endSec: 10 },
-      { name: 'Verse 1', startBar: 5, bars: 8, startSec: 10, endSec: 26 },
-    ]);
+    assert.equal(c.length, 8);
+    c.forEach((e, i) => {
+      near(e.t, i * 0.5);
+      assert.equal(e.track, 'click');
+      assert.equal(e.bar, i < 4 ? 1 : 2);
+      near(e.offset, (i % 4) * 0.5);
+      assert.equal(e.role, i % 4 === 0 ? 'accent' : 'beat');
+      assert.equal(e.sample, i % 4 === 0 ? 'c/A' : 'c/Q');
+      assert.equal('gainDb' in e, false, 'volume is applied per track by the player');
+    });
+    near(s.totalSec, 4);
   });
 
-  test('count-in voice gives the first half of the bar holding the Intro cue to the cue', () => {
-    const one = guides(buildSchedule(song(), catalog)).filter((e) => e.role === 'count');
-    assert.deepEqual(one.map((e) => [e.t, e.sample]), [[1, 'en/3'], [1.5, 'en/4']]);
+  test('eighth and sixteenth subdivisions in 4/4', () => {
+    const s8 = song({ endBar: 1 });
+    clickTrack(s8).subdivision = 'eighth';
+    const c8 = clicks(buildSchedule(s8, catalog));
+    assert.deepEqual(c8.map((e) => e.role), ['accent', 'eighth', 'beat', 'eighth', 'beat', 'eighth', 'beat', 'eighth']);
+    near(c8[1].t, 0.25);
 
-    const two = buildSchedule(song({ countInBars: 2 }), catalog);
-    assert.equal(two.t0, 4);
-    assert.deepEqual(guides(two).map((e) => [e.t, e.sample]), [
-      [0, 'en/1'], [0.5, 'en/2'], [1, 'en/3'], [1.5, 'en/4'],
-      [2, 'en/Intro'], [3, 'en/3'], [3.5, 'en/4'],
-      [10, 'en/Verse 1'],
-    ]);
+    const s16 = song({ endBar: 1 });
+    clickTrack(s16).subdivision = 'sixteenth';
+    const c16 = clicks(buildSchedule(s16, catalog));
+    assert.equal(c16.length, 16);
+    assert.deepEqual(c16.slice(0, 4).map((e) => e.role), ['accent', 'sixteenth', 'eighth', 'sixteenth']);
+    near(c16[1].t, 0.125);
   });
 
-  test('no count-in: song starts at 0 and section 1 has no cue', () => {
-    for (const s of [buildSchedule(song({ countInBars: 0 }), catalog),
-      buildSchedule(song({ countInBars: 2 }), catalog, { countIn: false })]) {
-      assert.equal(s.t0, 0);
-      assert.equal(s.totalSec, 24);
-      near(clicks(s)[0].t, 0);
-      assert.deepEqual(guides(s).map((e) => [e.t, e.sample]), [[6, 'en/Verse 1']]);
-    }
+  test('x/8: a hit on every eighth; eighth subdivision adds nothing, sixteenth adds one per beat', () => {
+    const s = song({ endBar: 1, meter: [{ bar: 1, beats: 6, unit: 8 }] });
+    const c = clicks(buildSchedule(s, catalog));
+    assert.equal(c.length, 6);
+    near(c[1].t, 0.25);
+    near(buildSchedule(s, catalog).totalSec, 1.5);
+
+    clickTrack(s).subdivision = 'eighth';
+    assert.equal(clicks(buildSchedule(s, catalog)).length, 6);
+
+    clickTrack(s).subdivision = 'sixteenth';
+    const c16 = clicks(buildSchedule(s, catalog));
+    assert.equal(c16.length, 12);
+    assert.deepEqual(c16.slice(0, 3).map((e) => e.role), ['accent', 'sixteenth', 'beat']);
+    near(c16[1].t, 0.125);
   });
 
-  test('AC 3: 6/8 @120 has 6 hits per bar 0.5 s apart, accent first', () => {
-    const s = buildSchedule(song({ meter: [6, 8], countInBars: 0, sections: [{ name: 'Intro', bars: 2 }] }), catalog);
-    const c = clicks(s);
-    assert.equal(c.length, 12);
-    c.forEach((e, i) => near(e.t, i * 0.5));
-    assert.deepEqual(c.slice(0, 7).map((e) => e.sample), ['c/A', 'c/Q', 'c/Q', 'c/Q', 'c/Q', 'c/Q', 'c/A']);
-    assert.equal(s.totalSec, 6);
-  });
-
-  test('AC 4: eighth and sixteenth subdivisions', () => {
-    const base = { countInBars: 0, sections: [{ name: 'Intro', bars: 1 }] };
-    const e8 = clicks(buildSchedule(song({ ...base, click: { sound: 'Classic', subdivision: 'eighth' } }), catalog));
-    assert.deepEqual(e8.map((e) => [e.t, e.sample]), [
-      [0, 'c/A'], [0.25, 'c/E'], [0.5, 'c/Q'], [0.75, 'c/E'],
-      [1, 'c/Q'], [1.25, 'c/E'], [1.5, 'c/Q'], [1.75, 'c/E'],
-    ]);
-    const e16 = clicks(buildSchedule(song({ ...base, click: { sound: 'Classic', subdivision: 'sixteenth' } }), catalog));
-    assert.equal(e16.length, 16);
-    assert.deepEqual(e16.slice(0, 5).map((e) => [e.t, e.sample]), [
-      [0, 'c/A'], [0.125, 'c/S'], [0.25, 'c/E'], [0.375, 'c/S'], [0.5, 'c/Q'],
-    ]);
-  });
-
-  test('AC 5: dynamic cue on its downbeat, moved to beat 3 when a section cue shares the bar', () => {
-    const s = buildSchedule(song({ cues: [{ name: 'Build', bar: 6 }, { name: 'Build', bar: 4 }] }), catalog);
-    const cues = guides(s).filter((e) => e.role === 'cue');
-    assert.deepEqual(cues.map((e) => [e.t, e.bar]), [[2 + 6 + 1, 4], [2 + 10, 6]]);
-  });
-
-  test('collision beat in odd meters is ceil(n/2)+1', () => {
-    const s = buildSchedule(song({ meter: [7, 8], countInBars: 0, cues: [{ name: 'Build', bar: 4 }] }), catalog);
-    const cue = guides(s).find((e) => e.role === 'cue');
-    near(cue.t, 3 * 3.5 + 4 * 0.5); // bar 4 starts at 10.5 s, beat 5
-  });
-
-  test('volumes are carried on events', () => {
-    const s = buildSchedule(song({ click: { sound: 'Classic', subdivision: 'quarter', volumeDb: -6 },
-      guide: { language: 'en', volumeDb: -3 } }), catalog);
-    assert.ok(clicks(s).every((e) => e.gainDb === -6));
-    assert.ok(guides(s).every((e) => e.gainDb === -3));
-  });
-
-  test('fallbacks: missing click role uses Classic, missing language item uses English, missing count is silent', () => {
+  test('follows meter and tempo markers', () => {
     const s = buildSchedule(song({
-      click: { sound: 'Digital', subdivision: 'eighth' },
-      guide: { language: 'es' },
-      cues: [{ name: 'Build', bar: 2 }],
+      endBar: 3,
+      tempo: [{ bar: 1, bpm: 120 }, { bar: 3, bpm: 60 }],
+      meter: [{ bar: 1, beats: 4, unit: 4 }, { bar: 3, beats: 6, unit: 4 }],
     }), catalog);
-    const c = clicks(s);
-    assert.deepEqual(c.slice(0, 3).map((e) => e.sample), ['d/A', 'c/E', 'c/Q']);
-    const g = guides(s);
-    assert.deepEqual(g.map((e) => e.sample), ['es/Intro', 'es/3', 'en/Build', 'en/Verse 1']);
-    assert.deepEqual(s.warnings, [
-      'Digital has no eighth click; using Classic for those hits.',
-      'Digital has no quarter click; using Classic for those hits.',
-      'No es count "4"; that beat is silent.',
-      'No es cue "Build"; using English.',
-      'No es section "Verse 1"; using English.',
-    ]);
+    const bar3 = clicks(s).filter((e) => e.bar === 3);
+    assert.deepEqual(bar3.map((e) => e.t), [4, 5, 6, 7, 8, 9]);
+    assert.deepEqual(bar3.map((e) => e.role), ['accent', 'beat', 'beat', 'beat', 'beat', 'beat']);
+    near(s.totalSec, 10);
   });
 
-  test('unknown guide names and cues past the last bar are skipped with warnings', () => {
-    const s = buildSchedule(song({
-      sections: [{ name: 'Intro', bars: 2 }, { name: 'Mystery', bars: 2 }],
-      cues: [{ name: 'Build', bar: 5 }, { name: 'Nope', bar: 1 }],
-    }), catalog);
-    assert.deepEqual(guides(s).map((e) => e.sample), ['en/Intro', 'en/3', 'en/4']);
-    assert.deepEqual(s.warnings, [
-      'Cue "Build" at bar 5 is past the end of the song (4 bars); skipped.',
-      'No recording for cue "Nope"; skipped.',
-      'No recording for section "Mystery"; skipped.',
-    ]);
-    assert.equal(s.sections[1].cueSample, null);
-  });
-
-  test('rejects songs that cannot be timed', () => {
-    assert.throws(() => buildSchedule(song({ bpm: 0 }), catalog), RangeError);
-    assert.throws(() => buildSchedule(song({ meter: [0, 4] }), catalog), RangeError);
-    assert.throws(() => buildSchedule(song({ sections: [{ name: 'Intro', bars: 0 }] }), catalog), RangeError);
-    assert.throws(() => buildSchedule(song({ sections: [] }), catalog), RangeError);
-  });
-
-  test('deterministic and does not modify the song', () => {
-    const input = song({ cues: [{ name: 'Build', bar: 4 }] });
-    const frozen = structuredClone(input);
-    deepFreeze(input);
-    assert.deepEqual(buildSchedule(input, catalog), buildSchedule(input, catalog));
-    assert.deepEqual(input, frozen);
-  });
-
-  test('decimal BPM stays on grid over a long song', () => {
-    const s = buildSchedule(song({ bpm: 72.5, countInBars: 0, sections: [{ name: 'Intro', bars: 400 }] }), catalog);
-    const c = clicks(s);
-    near(c.at(-1).t, 1599 * 60 / 72.5);
+  test('missing click sounds fall back to Classic with a warning', () => {
+    const s = song({ endBar: 1 });
+    clickTrack(s).sound = 'Digital';
+    const out = buildSchedule(s, catalog);
+    assert.deepEqual(clicks(out).map((e) => e.sample), ['d/A', 'c/Q', 'c/Q', 'c/Q']);
+    assert.deepEqual(out.warnings, ['Digital has no quarter click; using Classic for those hits.']);
   });
 });
 
-describe('secAtBar / barAt (song time, bar 1 = 0 s)', () => {
-  test('convert between bars and seconds', () => {
+describe('buildSchedule: cues', () => {
+  test('each cue clip plays its sample once at its position', () => {
+    const s = song({ endBar: 4, meter: [{ bar: 1, beats: 6, unit: 4 }], tempo: [{ bar: 1, bpm: 60 }] });
+    cuesTrack(s).clips = [
+      { at: [2, 1, 1], type: 'count', key: '1' },
+      { at: [1, 3, 3], type: 'cue', key: 'Build' },
+      { at: [3, 6, 1], type: 'section', key: 'Chorus' },
+    ];
+    const c = cues(buildSchedule(s, catalog));
+    assert.deepEqual(c.map((e) => [e.t, e.bar, e.offset, e.role, e.sample, e.track]), [
+      [2.5, 1, 2.5, 'cue', 'en/Build', 'cues'],
+      [6, 2, 0, 'count', 'en/1', 'cues'],
+      [17, 3, 5, 'section', 'en/Chorus', 'cues'],
+    ]);
+  });
+
+  test('language fallback: English for sections and cues, never for counts', () => {
     const s = song();
-    assert.equal(secAtBar(s, 1), 0);
-    assert.equal(secAtBar(s, 5), 8);
-    assert.equal(barAt(s, 8), 5);
-    assert.equal(barAt(s, 7.999), 4);
-    assert.equal(barAt(s, -0.1), 0);
-  });
-});
-
-describe('nextPosition', () => {
-  const three = song({ sections: [{ name: 'Intro', bars: 4 }, { name: 'Verse 1', bars: 8 }, { name: 'Chorus', bars: 8 }] });
-  const barEnd = { type: 'barEnd' };
-
-  function run(state, n) {
-    const bars = [];
-    for (let i = 0; i < n; i++) {
-      ({ state } = nextPosition(three, state, barEnd));
-      bars.push(state.bar);
-    }
-    return { state, bars };
-  }
-
-  test('starts in the count-in and plays bars in order to the end', () => {
-    let state = initialPlayState(three);
-    assert.equal(state.bar, 0);
-    const r = run(state, 20);
-    assert.deepEqual(r.bars, Array.from({ length: 20 }, (_, i) => i + 1));
-    const last = nextPosition(three, r.state, barEnd);
-    assert.equal(last.end, true);
-    state = initialPlayState(three, { countIn: false });
-    assert.equal(state.bar, 1);
-  });
-
-  test('jump lands on the next downbeat; first-half request announces the target', () => {
-    let { state } = run(initialPlayState(three), 2); // in bar 2
-    const early = nextPosition(three, state, { type: 'jump', section: 2, barFraction: 0.3 });
-    assert.equal(early.announce, 2);
-    state = early.state;
-    const next = nextPosition(three, state, barEnd);
-    assert.equal(next.state.bar, 13);
-    assert.equal(next.jumped, true);
-    assert.equal(next.state.pendingJump, null);
-
-    const late = nextPosition(three, next.state, { type: 'jump', section: 0, barFraction: 0.5 });
-    assert.equal(late.announce, null);
-    assert.equal(nextPosition(three, late.state, barEnd).state.bar, 1);
-  });
-
-  test('a different jump replaces the pending one; the same one cancels it', () => {
-    let { state } = run(initialPlayState(three), 2);
-    state = nextPosition(three, state, { type: 'jump', section: 2, barFraction: 0.1 }).state;
-    state = nextPosition(three, state, { type: 'jump', section: 1, barFraction: 0.2 }).state;
-    assert.equal(state.pendingJump, 1);
-    assert.equal(nextPosition(three, state, barEnd).state.bar, 5);
-
-    const cancelled = nextPosition(three, state, { type: 'jump', section: 1, barFraction: 0.9 });
-    assert.equal(cancelled.state.pendingJump, null);
-    assert.equal(cancelled.announce, null);
-    assert.equal(nextPosition(three, cancelled.state, barEnd).state.bar, 3);
-  });
-
-  test('AC 7: loop repeats a section 50 times without drift, then release continues', () => {
-    let { state } = run(initialPlayState(three), 1); // bar 1 (Intro, bars 1-4)
-    state = nextPosition(three, state, { type: 'loop' }).state;
-    assert.equal(state.loop, 0);
-    const r = run(state, 4 * 50);
-    const expected = Array.from({ length: 200 }, (_, i) => [2, 3, 4, 1][i % 4]);
-    assert.deepEqual(r.bars, expected);
-    // Elapsed time is counted in whole bars (count-in + bar 1 + 200 looped bars), so it cannot drift.
-    assert.equal(r.state.barsElapsed, 201);
-
-    state = nextPosition(three, r.state, { type: 'loop' }).state; // release in bar 1
-    assert.equal(state.loop, null);
-    assert.deepEqual(run(state, 4).bars, [2, 3, 4, 5]);
-  });
-
-  test('jump to a section that does not exist is rejected immediately', () => {
-    assert.throws(() => nextPosition(three, initialPlayState(three), { type: 'jump', section: 3, barFraction: 0 }), RangeError);
-  });
-
-  test('jump clears a loop; loop during count-in is ignored', () => {
-    let { state } = run(initialPlayState(three), 6); // bar 6, Verse 1
-    state = nextPosition(three, state, { type: 'loop' }).state;
-    state = nextPosition(three, state, { type: 'jump', section: 2, barFraction: 0.8 }).state;
-    const next = nextPosition(three, state, barEnd).state;
-    assert.equal(next.bar, 13);
-    assert.equal(next.loop, null);
-
-    const counting = nextPosition(three, initialPlayState(three), { type: 'loop' });
-    assert.equal(counting.state.loop, null);
-  });
-});
-
-describe('barEvents', () => {
-  const three = song({ sections: [{ name: 'Intro', bars: 4 }, { name: 'Verse 1', bars: 8 }, { name: 'Chorus', bars: 8 }] });
-  const schedule = buildSchedule(three, catalog);
-
-  test('returns a bar\'s events with offsets from the bar start', () => {
-    const state = { ...initialPlayState(three), bar: 4 };
-    const ev = barEvents(schedule, state);
-    assert.deepEqual(ev.map((e) => [e.offset, e.kind, e.sample]), [
-      [0, 'click', 'c/A'], [0, 'guide', 'en/Verse 1'], [0.5, 'click', 'c/Q'], [1, 'click', 'c/Q'], [1.5, 'click', 'c/Q'],
+    cuesTrack(s).language = 'es';
+    cuesTrack(s).clips = [
+      { at: [1, 1, 1], type: 'section', key: 'Intro' },
+      { at: [1, 2, 1], type: 'section', key: 'Verse 1' },
+      { at: [1, 3, 1], type: 'count', key: '5' },
+      { at: [1, 4, 1], type: 'cue', key: 'Nope' },
+    ];
+    const out = buildSchedule(s, catalog);
+    assert.deepEqual(cues(out).map((e) => e.sample), ['es/Intro', 'en/Verse 1']);
+    assert.deepEqual(out.warnings, [
+      'No es count "5"; that beat is silent.',
+      'No es section "Verse 1"; using English.',
+      'No recording for cue "Nope"; skipped.',
     ]);
-    assert.deepEqual(barEvents(schedule, initialPlayState(three)).map((e) => e.offset), [0, 0, 0.5, 1, 1, 1.5, 1.5]);
   });
 
-  test('looping suppresses the next section\'s cue in the loop\'s last bar only', () => {
-    const state = { ...initialPlayState(three), bar: 4, loop: 0 };
-    assert.ok(!barEvents(schedule, state).some((e) => e.role === 'section'));
-    assert.equal(barEvents(schedule, { ...state, loop: 1 }).filter((e) => e.role === 'section').length, 1);
+  test('at the same time, the click comes before the cue', () => {
+    const s = song();
+    cuesTrack(s).clips = [{ at: [1, 1, 1], type: 'count', key: '1' }];
+    const out = buildSchedule(s, catalog);
+    assert.deepEqual(out.events.slice(0, 2).map((e) => e.kind), ['click', 'cue']);
   });
 });
 
-function deepFreeze(o) {
-  Object.values(o).forEach((v) => typeof v === 'object' && v && deepFreeze(v));
-  return Object.freeze(o);
-}
-
-describe('stemStart (where a stem file is when song time `songSec` plays)', () => {
-  test('from the start of a 1-bar count-in at 120 BPM (song time -2 s)', () => {
-    assert.deepEqual(stemStart(-2, 0), { delaySec: 2, fileOffsetSec: 0 });
-    assert.deepEqual(stemStart(-2, 100), { delaySec: 2.1, fileOffsetSec: 0 });
-    assert.deepEqual(stemStart(-2, -500), { delaySec: 1.5, fileOffsetSec: 0 });
-    assert.deepEqual(stemStart(-2, -2000), { delaySec: 0, fileOffsetSec: 0 });
+describe('buildSchedule: clips and sections', () => {
+  test('audio clips are listed per track', () => {
+    const s = song();
+    s.tracks.push(
+      { id: 'a1', type: 'audio', name: 'Song', color: 2, volumeDb: 0, muted: false, output: 'both', clip: { file: 'Song.wav', startSec: 3.214 } },
+      { id: 'a2', type: 'audio', name: 'Empty', color: 3, volumeDb: 0, muted: false, output: 'both', clip: null },
+    );
+    assert.deepEqual(buildSchedule(s, catalog).clips, [{ track: 'a1', file: 'Song.wav', startSec: 3.214 }]);
   });
 
-  test('mid-song (e.g. after a jump to bar 5 = 8 s)', () => {
-    assert.deepEqual(stemStart(8, 0), { delaySec: 0, fileOffsetSec: 8 });
-    assert.deepEqual(stemStart(8, 100), { delaySec: 0, fileOffsetSec: 7.9 });
-    assert.deepEqual(stemStart(8, -250), { delaySec: 0, fileOffsetSec: 8.25 });
+  test('locators become sections, sorted, each ending before the next or at the end bar', () => {
+    const s = song({ endBar: 10, locators: [{ bar: 7, name: 'Chorus' }, { bar: 3, name: 'Intro' }] });
+    assert.deepEqual(buildSchedule(s, catalog).sections, [
+      { name: 'Intro', startBar: 3, endBar: 6, startSec: 4, endSec: 12 },
+      { name: 'Chorus', startBar: 7, endBar: 10, startSec: 12, endSec: 20 },
+    ]);
+  });
+
+  test('sectionAt finds the section a bar is in, or -1 before the first locator', () => {
+    const s = buildSchedule(song({ endBar: 10, locators: [{ bar: 3, name: 'Intro' }, { bar: 7, name: 'Chorus' }] }), catalog);
+    assert.equal(sectionAt(s, 2), -1);
+    assert.equal(sectionAt(s, 3), 0);
+    assert.equal(sectionAt(s, 6), 0);
+    assert.equal(sectionAt(s, 10), 1);
+  });
+});
+
+describe('live transitions', () => {
+  // 4/4 at 120 (2 s bars), 8 bars; sections: A bars 1–4, B bars 5–8.
+  const sched = () => buildSchedule(song({ endBar: 8, locators: [{ bar: 1, name: 'A' }, { bar: 5, name: 'B' }] }), catalog);
+  const end = (s, st) => nextPosition(s, st, { type: 'barEnd' });
+
+  test('starts at bar 1 or at a chosen bar', () => {
+    const s = sched();
+    assert.deepEqual(initialPlayState(s), { bar: 1, pendingJump: null, loop: null, elapsedSec: 0 });
+    assert.equal(initialPlayState(s, { fromBar: 5 }).bar, 5);
+    assert.throws(() => initialPlayState(s, { fromBar: 9 }), RangeError);
+  });
+
+  test('barEnd advances and adds the finished bar to the elapsed time; ends after the end bar', () => {
+    const s = sched();
+    let st = initialPlayState(s, { fromBar: 7 });
+    let r = end(s, st);
+    assert.equal(r.state.bar, 8);
+    assert.equal(r.state.elapsedSec, 2);
+    st = r.state;
+    r = end(s, st);
+    assert.equal(r.end, true);
+  });
+
+  test('elapsed time follows bar lengths across tempo and meter changes', () => {
+    const s = buildSchedule(song({
+      endBar: 3,
+      tempo: [{ bar: 1, bpm: 120 }, { bar: 3, bpm: 60 }],
+      meter: [{ bar: 1, beats: 4, unit: 4 }, { bar: 2, beats: 3, unit: 4 }],
+    }), catalog);
+    let st = initialPlayState(s);
+    st = end(s, st).state;
+    st = end(s, st).state;
+    near(st.elapsedSec, 2 + 1.5);
+    assert.equal(st.bar, 3);
+  });
+
+  test('jump: lands at the target locator on the next bar line; same again cancels; another replaces', () => {
+    const s = sched();
+    let st = initialPlayState(s);
+    st = nextPosition(s, st, { type: 'jump', section: 1 }).state;
+    assert.equal(st.pendingJump, 1);
+    assert.equal(nextPosition(s, st, { type: 'jump', section: 1 }).state.pendingJump, null);
+    assert.equal(nextPosition(s, st, { type: 'jump', section: 0 }).state.pendingJump, 0);
+    const r = end(s, st);
+    assert.equal(r.jumped, true);
+    assert.equal(r.state.bar, 5);
+    assert.equal(r.state.pendingJump, null);
+    assert.equal(r.state.elapsedSec, 2);
+    assert.throws(() => nextPosition(s, st, { type: 'jump', section: 2 }), RangeError);
+  });
+
+  test('jump returns no announcement', () => {
+    const s = sched();
+    const r = nextPosition(s, initialPlayState(s), { type: 'jump', section: 1 });
+    assert.equal('announce' in r, false);
+  });
+
+  test('a jump releases the loop', () => {
+    const s = sched();
+    let st = nextPosition(s, initialPlayState(s), { type: 'loop', range: { section: 0 } }).state;
+    st = nextPosition(s, st, { type: 'jump', section: 1 }).state;
+    assert.equal(end(s, st).state.loop, null);
+  });
+
+  test('loop a section: after its last bar, back to its first', () => {
+    const s = sched();
+    let st = nextPosition(s, initialPlayState(s, { fromBar: 3 }), { type: 'loop', range: { section: 0 } }).state;
+    assert.deepEqual(st.loop, { startBar: 1, endBar: 4, section: 0 });
+    st = end(s, st).state; // 3 -> 4
+    const r = end(s, st); // 4 -> 1
+    assert.equal(r.looped, true);
+    assert.equal(r.state.bar, 1);
+    assert.deepEqual(r.state.loop, st.loop);
+  });
+
+  test('loop a bar range; clearing it continues normally', () => {
+    const s = sched();
+    let st = nextPosition(s, initialPlayState(s, { fromBar: 6 }), { type: 'loop', range: { startBar: 6, endBar: 6 } }).state;
+    let r = end(s, st);
+    assert.equal(r.looped, true);
+    assert.equal(r.state.bar, 6);
+    st = nextPosition(s, r.state, { type: 'loop', range: null }).state;
+    r = end(s, st);
+    assert.equal(r.state.bar, 7);
+  });
+
+  test('invalid loop ranges throw', () => {
+    const s = sched();
+    const st = initialPlayState(s);
+    assert.throws(() => nextPosition(s, st, { type: 'loop', range: { startBar: 5, endBar: 4 } }), RangeError);
+    assert.throws(() => nextPosition(s, st, { type: 'loop', range: { startBar: 1, endBar: 9 } }), RangeError);
+    assert.throws(() => nextPosition(s, st, { type: 'loop', range: { section: 5 } }), RangeError);
+  });
+
+  test('no drift: 10 000 loops of two bars at different tempos', () => {
+    const s = buildSchedule(song({
+      endBar: 2,
+      tempo: [{ bar: 1, bpm: 68 }, { bar: 2, bpm: 97 }],
+      meter: [{ bar: 1, beats: 6, unit: 4 }],
+    }), catalog);
+    let st = nextPosition(s, initialPlayState(s), { type: 'loop', range: { startBar: 1, endBar: 2 } }).state;
+    for (let i = 0; i < 20000; i++) st = end(s, st).state;
+    // Bar 1: 6 quarters at 68 = 90/17 s; bar 2: 6 quarters at 97 = 360/97 s.
+    const expected = (10000 * (90 * 97 + 360 * 17)) / (17 * 97);
+    assert.ok(Math.abs(st.elapsedSec - expected) < 1e-6, `${st.elapsedSec} vs ${expected}`);
+    assert.equal(st.bar, 1);
+  });
+
+  test('barEvents: the events of the current bar with offsets from its downbeat', () => {
+    const s = sched();
+    const ev = barEvents(s, { ...initialPlayState(s), bar: 2 });
+    assert.equal(ev.length, 4);
+    assert.deepEqual(ev.map((e) => e.offset), [0, 0.5, 1, 1.5]);
+    assert.ok(ev.every((e) => e.bar === 2));
+  });
+});
+
+describe('clipStart', () => {
+  test('spec examples', () => {
+    assert.deepEqual(clipStart(3.214, 0), { delaySec: 3.214, fileOffsetSec: 0 });
+    assert.deepEqual(clipStart(3.214, 10), { delaySec: 0, fileOffsetSec: 6.786 });
+    assert.deepEqual(clipStart(-2, 0), { delaySec: 0, fileOffsetSec: 2 });
   });
 });
