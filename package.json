@@ -1,0 +1,13 @@
+{
+  "name": "backing-track-builder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local click + guide + stems builder and live player",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test \"test/**/*.test.js\"",
+    "import-samples": "node server/import-samples.js"
+  }
+}

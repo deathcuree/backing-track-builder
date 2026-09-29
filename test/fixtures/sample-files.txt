@@ -1,0 +1,491 @@
+.DS_Store
+Click Guide - Drum Racks Project/.DS_Store
+Click Guide - Drum Racks Project/Ableton Project Info/Project8_1.cfg
+Click Guide - Drum Racks Project/Click Guide Drum Racks.als
+Click Guide - Drum Racks Project/Icon
+Click Guide - Drum Racks Project/Samples/.DS_Store
+Click Guide - Drum Racks Project/Samples/Processed/.DS_Store
+Click Guide - Drum Racks Project/Samples/Processed/Freeze/Blank 16s.wav
+Click Guide - Drum Racks Project/Samples/Processed/Freeze/Blank 16s.wav.asd
+Click Guide - Drum Racks Project/Samples/Processed/Freeze/Blank 4s.wav
+Click Guide - Drum Racks Project/Samples/Processed/Freeze/Blank 4s.wav.asd
+Click Guide - Drum Racks Project/Samples/Processed/Freeze/Blank 8s.wav
+Click Guide - Drum Racks Project/Samples/Processed/Freeze/Blank 8s.wav.asd
+Click Guide - Drum Racks Project/Samples/Processed/Freeze/Blank Accent.wav
+Click Guide - Drum Racks Project/Samples/Processed/Freeze/Blank Accent.wav.asd
+Click Tracks/New Click -  Blip-accents.wav
+Click Tracks/New Click -  Blip-accents.wav.asd
+Click Tracks/New Click -  Blip-eighth.wav
+Click Tracks/New Click -  Blip-eighth.wav.asd
+Click Tracks/New Click -  Blip-quarter.wav
+Click Tracks/New Click -  Blip-quarter.wav.asd
+Click Tracks/New Click -  Blip-sixteenth.wav
+Click Tracks/New Click -  Blip-sixteenth.wav.asd
+Click Tracks/New Click -  Classic-accents.wav
+Click Tracks/New Click -  Classic-accents.wav.asd
+Click Tracks/New Click -  Classic-eighth.wav
+Click Tracks/New Click -  Classic-eighth.wav.asd
+Click Tracks/New Click -  Classic-quarter.wav
+Click Tracks/New Click -  Classic-quarter.wav.asd
+Click Tracks/New Click -  Classic-sixteenth.wav
+Click Tracks/New Click -  Classic-sixteenth.wav.asd
+Click Tracks/New Click -  Cowbell-accents.wav
+Click Tracks/New Click -  Cowbell-accents.wav.asd
+Click Tracks/New Click -  Cowbell-eighth.wav
+Click Tracks/New Click -  Cowbell-eighth.wav.asd
+Click Tracks/New Click -  Cowbell-quarter.wav
+Click Tracks/New Click -  Cowbell-quarter.wav.asd
+Click Tracks/New Click -  Cowbell-sixteenth.wav
+Click Tracks/New Click -  Cowbell-sixteenth.wav.asd
+Click Tracks/New Click -  Digital-accents.wav
+Click Tracks/New Click -  Digital-accents.wav.asd
+Click Tracks/New Click -  Digital-sixteenth.wav
+Click Tracks/New Click -  Digital-sixteenth.wav.asd
+Click Tracks/New Click -  Gentle-accents.wav
+Click Tracks/New Click -  Gentle-accents.wav.asd
+Click Tracks/New Click -  Gentle-eighth.wav
+Click Tracks/New Click -  Gentle-eighth.wav.asd
+Click Tracks/New Click -  Gentle-quarter.wav
+Click Tracks/New Click -  Gentle-quarter.wav.asd
+Click Tracks/New Click -  Gentle-sixteenth.wav
+Click Tracks/New Click -  Gentle-sixteenth.wav.asd
+Click Tracks/New Click -  Percussive-accents.wav
+Click Tracks/New Click -  Percussive-accents.wav.asd
+Click Tracks/New Click -  Percussive-eighth.wav
+Click Tracks/New Click -  Percussive-eighth.wav.asd
+Click Tracks/New Click -  Percussive-quarter.wav
+Click Tracks/New Click -  Percussive-quarter.wav.asd
+Click Tracks/New Click -  Percussive-sixteenth.wav
+Click Tracks/New Click -  Percussive-sixteenth.wav.asd
+Click Tracks/New Click -  Saw-accents.wav
+Click Tracks/New Click -  Saw-accents.wav.asd
+Click Tracks/New Click -  Saw-eighth.wav
+Click Tracks/New Click -  Saw-eighth.wav.asd
+Click Tracks/New Click -  Saw-quarter.wav
+Click Tracks/New Click -  Saw-quarter.wav.asd
+Click Tracks/New Click -  Woodblock-accents.wav
+Click Tracks/New Click -  Woodblock-accents.wav.asd
+Click Tracks/New Click -  Woodblock-eighth.wav
+Click Tracks/New Click -  Woodblock-eighth.wav.asd
+Click Tracks/New Click -  Woodblock-quarter.wav
+Click Tracks/New Click -  Woodblock-quarter.wav.asd
+Click Tracks/New Click -  Woodblock-sixteenth.wav
+Click Tracks/New Click -  Woodblock-sixteenth.wav.asd
+English Guides/.DS_Store
+English Guides/Dynamic Cues/English Female - Ad Lib.wav
+English Guides/Dynamic Cues/English Female - All In.wav
+English Guides/Dynamic Cues/English Female - All In.wav.asd
+English Guides/Dynamic Cues/English Female - Bass.wav
+English Guides/Dynamic Cues/English Female - Bass.wav.asd
+English Guides/Dynamic Cues/English Female - Big Ending.wav
+English Guides/Dynamic Cues/English Female - Break.wav
+English Guides/Dynamic Cues/English Female - Build.wav
+English Guides/Dynamic Cues/English Female - Build.wav.asd
+English Guides/Dynamic Cues/English Female - Drums In.wav
+English Guides/Dynamic Cues/English Female - Drums In.wav.asd
+English Guides/Dynamic Cues/English Female - Drums.wav
+English Guides/Dynamic Cues/English Female - Drums.wav.asd
+English Guides/Dynamic Cues/English Female - Hits.wav
+English Guides/Dynamic Cues/English Female - Hits.wav.asd
+English Guides/Dynamic Cues/English Female - Hold.wav
+English Guides/Dynamic Cues/English Female - Key Change Down.wav
+English Guides/Dynamic Cues/English Female - Key Change Up.wav
+English Guides/Dynamic Cues/English Female - Keys.wav
+English Guides/Dynamic Cues/English Female - Last Time.wav
+English Guides/Dynamic Cues/English Female - Last Time.wav.asd
+English Guides/Dynamic Cues/English Female - Slowly Build.wav
+English Guides/Dynamic Cues/English Female - Softly.wav
+English Guides/Dynamic Cues/English Female - Swell.wav
+English Guides/Dynamic Cues/English Female - Worship Freely.wav
+English Guides/Song Sections/English Female - 1.wav
+English Guides/Song Sections/English Female - 1.wav.asd
+English Guides/Song Sections/English Female - 2.wav
+English Guides/Song Sections/English Female - 2.wav.asd
+English Guides/Song Sections/English Female - 3.wav
+English Guides/Song Sections/English Female - 3.wav.asd
+English Guides/Song Sections/English Female - 4.wav
+English Guides/Song Sections/English Female - 4.wav.asd
+English Guides/Song Sections/English Female - 5.wav
+English Guides/Song Sections/English Female - 5.wav.asd
+English Guides/Song Sections/English Female - 6.wav
+English Guides/Song Sections/English Female - 6.wav.asd
+English Guides/Song Sections/English Female - 7.wav
+English Guides/Song Sections/English Female - 7.wav.asd
+English Guides/Song Sections/English Female - Acapella.wav
+English Guides/Song Sections/English Female - Acapella.wav.asd
+English Guides/Song Sections/English Female - Breakdown.wav
+English Guides/Song Sections/English Female - Breakdown.wav.asd
+English Guides/Song Sections/English Female - Bridge 1.wav
+English Guides/Song Sections/English Female - Bridge 1.wav.asd
+English Guides/Song Sections/English Female - Bridge 2.wav
+English Guides/Song Sections/English Female - Bridge 2.wav.asd
+English Guides/Song Sections/English Female - Bridge 3.wav
+English Guides/Song Sections/English Female - Bridge 3.wav.asd
+English Guides/Song Sections/English Female - Bridge 4.wav
+English Guides/Song Sections/English Female - Bridge 4.wav.asd
+English Guides/Song Sections/English Female - Bridge.wav
+English Guides/Song Sections/English Female - Bridge.wav.asd
+English Guides/Song Sections/English Female - Chorus 1.wav
+English Guides/Song Sections/English Female - Chorus 1.wav.asd
+English Guides/Song Sections/English Female - Chorus 2.wav
+English Guides/Song Sections/English Female - Chorus 2.wav.asd
+English Guides/Song Sections/English Female - Chorus 3.wav
+English Guides/Song Sections/English Female - Chorus 3.wav.asd
+English Guides/Song Sections/English Female - Chorus 4.wav
+English Guides/Song Sections/English Female - Chorus 4.wav.asd
+English Guides/Song Sections/English Female - Chorus.wav
+English Guides/Song Sections/English Female - Chorus.wav.asd
+English Guides/Song Sections/English Female - Ending.wav
+English Guides/Song Sections/English Female - Ending.wav.asd
+English Guides/Song Sections/English Female - Exhortation.wav
+English Guides/Song Sections/English Female - Exhortation.wav.asd
+English Guides/Song Sections/English Female - Instrumental.wav
+English Guides/Song Sections/English Female - Instrumental.wav.asd
+English Guides/Song Sections/English Female - Interlude.wav
+English Guides/Song Sections/English Female - Interlude.wav.asd
+English Guides/Song Sections/English Female - Intro.wav
+English Guides/Song Sections/English Female - Intro.wav.asd
+English Guides/Song Sections/English Female - Outro.wav
+English Guides/Song Sections/English Female - Outro.wav.asd
+English Guides/Song Sections/English Female - Post Chorus.wav
+English Guides/Song Sections/English Female - Post Chorus.wav.asd
+English Guides/Song Sections/English Female - Pre Chorus 1.wav
+English Guides/Song Sections/English Female - Pre Chorus 1.wav.asd
+English Guides/Song Sections/English Female - Pre Chorus 2.wav
+English Guides/Song Sections/English Female - Pre Chorus 2.wav.asd
+English Guides/Song Sections/English Female - Pre Chorus 3.wav
+English Guides/Song Sections/English Female - Pre Chorus 3.wav.asd
+English Guides/Song Sections/English Female - Pre Chorus 4.wav
+English Guides/Song Sections/English Female - Pre Chorus 4.wav.asd
+English Guides/Song Sections/English Female - Pre Chorus.wav
+English Guides/Song Sections/English Female - Pre Chorus.wav.asd
+English Guides/Song Sections/English Female - Rap.wav
+English Guides/Song Sections/English Female - Refrain.wav
+English Guides/Song Sections/English Female - Refrain.wav.asd
+English Guides/Song Sections/English Female - Solo.wav
+English Guides/Song Sections/English Female - Solo.wav.asd
+English Guides/Song Sections/English Female - Tag.wav
+English Guides/Song Sections/English Female - Tag.wav.asd
+English Guides/Song Sections/English Female - Turnaround.wav
+English Guides/Song Sections/English Female - Turnaround.wav.asd
+English Guides/Song Sections/English Female - Vamp.wav
+English Guides/Song Sections/English Female - Vamp.wav.asd
+English Guides/Song Sections/English Female - Verse 1.wav
+English Guides/Song Sections/English Female - Verse 1.wav.asd
+English Guides/Song Sections/English Female - Verse 2.wav
+English Guides/Song Sections/English Female - Verse 2.wav.asd
+English Guides/Song Sections/English Female - Verse 3.wav
+English Guides/Song Sections/English Female - Verse 3.wav.asd
+English Guides/Song Sections/English Female - Verse 4.wav
+English Guides/Song Sections/English Female - Verse 4.wav.asd
+English Guides/Song Sections/English Female - Verse 5.wav
+English Guides/Song Sections/English Female - Verse 5.wav.asd
+English Guides/Song Sections/English Female - Verse 6.wav
+English Guides/Song Sections/English Female - Verse 6.wav.asd
+English Guides/Song Sections/English Female - Verse.wav
+English Guides/Song Sections/English Female - Verse.wav.asd
+French Guides/.DS_Store
+French Guides/Dynamic Cues/French Guide -  Bass.wav
+French Guides/Dynamic Cues/French Guide -  Break.wav
+French Guides/Dynamic Cues/French Guide -  Drums In.wav
+French Guides/Dynamic Cues/French Guide -  Drums.wav
+French Guides/Dynamic Cues/French Guide -  Guitar.wav
+French Guides/Dynamic Cues/French Guide -  Hits.wav
+French Guides/Dynamic Cues/French Guide -  Hold.wav
+French Guides/Dynamic Cues/French Guide -  Keys.wav
+French Guides/Dynamic Cues/French Guide -  Swell.wav
+French Guides/Song Sections/French - 1.wav
+French Guides/Song Sections/French - 1.wav.asd
+French Guides/Song Sections/French - 2.wav
+French Guides/Song Sections/French - 2.wav.asd
+French Guides/Song Sections/French - 3.wav
+French Guides/Song Sections/French - 3.wav.asd
+French Guides/Song Sections/French - 4.wav
+French Guides/Song Sections/French - 4.wav.asd
+French Guides/Song Sections/French - 5.wav
+French Guides/Song Sections/French - 5.wav.asd
+French Guides/Song Sections/French - 6.wav
+French Guides/Song Sections/French - 6.wav.asd
+French Guides/Song Sections/French - Acapella.wav
+French Guides/Song Sections/French - Acapella.wav.asd
+French Guides/Song Sections/French - Breakdown.wav
+French Guides/Song Sections/French - Breakdown.wav.asd
+French Guides/Song Sections/French - Bridge 1.wav
+French Guides/Song Sections/French - Bridge 1.wav.asd
+French Guides/Song Sections/French - Bridge 2.wav
+French Guides/Song Sections/French - Bridge 2.wav.asd
+French Guides/Song Sections/French - Bridge 3.wav
+French Guides/Song Sections/French - Bridge 3.wav.asd
+French Guides/Song Sections/French - Bridge 4.wav
+French Guides/Song Sections/French - Bridge 4.wav.asd
+French Guides/Song Sections/French - Bridge.wav
+French Guides/Song Sections/French - Bridge.wav.asd
+French Guides/Song Sections/French - Chorus 1.wav
+French Guides/Song Sections/French - Chorus 1.wav.asd
+French Guides/Song Sections/French - Chorus 2.wav
+French Guides/Song Sections/French - Chorus 2.wav.asd
+French Guides/Song Sections/French - Chorus 3.wav
+French Guides/Song Sections/French - Chorus 3.wav.asd
+French Guides/Song Sections/French - Chorus 4.wav
+French Guides/Song Sections/French - Chorus 4.wav.asd
+French Guides/Song Sections/French - Chorus.wav
+French Guides/Song Sections/French - Chorus.wav.asd
+French Guides/Song Sections/French - Ending.wav
+French Guides/Song Sections/French - Ending.wav.asd
+French Guides/Song Sections/French - Exhortation.wav
+French Guides/Song Sections/French - Exhortation.wav.asd
+French Guides/Song Sections/French - Instrumental.wav
+French Guides/Song Sections/French - Instrumental.wav.asd
+French Guides/Song Sections/French - Interlude.wav
+French Guides/Song Sections/French - Interlude.wav.asd
+French Guides/Song Sections/French - Intro.wav
+French Guides/Song Sections/French - Intro.wav.asd
+French Guides/Song Sections/French - Outro.wav
+French Guides/Song Sections/French - Outro.wav.asd
+French Guides/Song Sections/French - Post Chorus.wav
+French Guides/Song Sections/French - Post Chorus.wav.asd
+French Guides/Song Sections/French - Pre Chorus 1.wav
+French Guides/Song Sections/French - Pre Chorus 1.wav.asd
+French Guides/Song Sections/French - Pre Chorus 2.wav
+French Guides/Song Sections/French - Pre Chorus 2.wav.asd
+French Guides/Song Sections/French - Pre Chorus 3.wav
+French Guides/Song Sections/French - Pre Chorus 3.wav.asd
+French Guides/Song Sections/French - Pre Chorus 4.wav
+French Guides/Song Sections/French - Pre Chorus 4.wav.asd
+French Guides/Song Sections/French - Pre Chorus.wav
+French Guides/Song Sections/French - Pre Chorus.wav.asd
+French Guides/Song Sections/French - Rap.wav
+French Guides/Song Sections/French - Refrain.wav
+French Guides/Song Sections/French - Refrain.wav.asd
+French Guides/Song Sections/French - Solo.wav
+French Guides/Song Sections/French - Solo.wav.asd
+French Guides/Song Sections/French - Tag.wav
+French Guides/Song Sections/French - Tag.wav.asd
+French Guides/Song Sections/French - Turnaround.wav
+French Guides/Song Sections/French - Vamp.wav
+French Guides/Song Sections/French - Vamp.wav.asd
+French Guides/Song Sections/French - Verse 1.wav
+French Guides/Song Sections/French - Verse 1.wav.asd
+French Guides/Song Sections/French - Verse 2.wav
+French Guides/Song Sections/French - Verse 2.wav.asd
+French Guides/Song Sections/French - Verse 3.wav
+French Guides/Song Sections/French - Verse 3.wav.asd
+French Guides/Song Sections/French - Verse 4.wav
+French Guides/Song Sections/French - Verse 4.wav.asd
+French Guides/Song Sections/French - Verse 5.wav
+French Guides/Song Sections/French - Verse 5.wav.asd
+French Guides/Song Sections/French - Verse 6.wav
+French Guides/Song Sections/French - Verse 6.wav.asd
+French Guides/Song Sections/French - Verse.wav
+French Guides/Song Sections/French - Verse.wav.asd
+Portugese Guides/.DS_Store
+Portugese Guides/Dynamic Cues/Portugese - All In.wav
+Portugese Guides/Dynamic Cues/Portugese - Bass.wav
+Portugese Guides/Dynamic Cues/Portugese - Big Ending.wav
+Portugese Guides/Dynamic Cues/Portugese - Break.wav
+Portugese Guides/Dynamic Cues/Portugese - Breakdown.wav
+Portugese Guides/Dynamic Cues/Portugese - Build.wav
+Portugese Guides/Dynamic Cues/Portugese - Channel.wav
+Portugese Guides/Dynamic Cues/Portugese - Click.wav
+Portugese Guides/Dynamic Cues/Portugese - Drums In.wav
+Portugese Guides/Dynamic Cues/Portugese - Drums.wav
+Portugese Guides/Dynamic Cues/Portugese - Exhortation.wav
+Portugese Guides/Dynamic Cues/Portugese - Guitar.wav
+Portugese Guides/Dynamic Cues/Portugese - Hits.wav
+Portugese Guides/Dynamic Cues/Portugese - Hold.wav
+Portugese Guides/Dynamic Cues/Portugese - Key Change Down.wav
+Portugese Guides/Dynamic Cues/Portugese - Key Change Up.wav
+Portugese Guides/Dynamic Cues/Portugese - Keys.wav
+Portugese Guides/Dynamic Cues/Portugese - Last Time.wav
+Portugese Guides/Dynamic Cues/Portugese - Pad.wav
+Portugese Guides/Dynamic Cues/Portugese - Slowly Build.wav
+Portugese Guides/Dynamic Cues/Portugese - Softly.wav
+Portugese Guides/Dynamic Cues/Portugese - Swell.wav
+Portugese Guides/Song Sections/.DS_Store
+Portugese Guides/Song Sections/Portugese - 1.wav
+Portugese Guides/Song Sections/Portugese - 1.wav.asd
+Portugese Guides/Song Sections/Portugese - 2.wav
+Portugese Guides/Song Sections/Portugese - 2.wav.asd
+Portugese Guides/Song Sections/Portugese - 3.wav
+Portugese Guides/Song Sections/Portugese - 3.wav.asd
+Portugese Guides/Song Sections/Portugese - 4.wav
+Portugese Guides/Song Sections/Portugese - 4.wav.asd
+Portugese Guides/Song Sections/Portugese - 5.wav
+Portugese Guides/Song Sections/Portugese - 5.wav.asd
+Portugese Guides/Song Sections/Portugese - 6.wav
+Portugese Guides/Song Sections/Portugese - 6.wav.asd
+Portugese Guides/Song Sections/Portugese - Acapella.wav
+Portugese Guides/Song Sections/Portugese - Acapella.wav.asd
+Portugese Guides/Song Sections/Portugese - Breakdown.wav
+Portugese Guides/Song Sections/Portugese - Breakdown.wav.asd
+Portugese Guides/Song Sections/Portugese - Bridge 1.wav
+Portugese Guides/Song Sections/Portugese - Bridge 1.wav.asd
+Portugese Guides/Song Sections/Portugese - Bridge 2.wav
+Portugese Guides/Song Sections/Portugese - Bridge 2.wav.asd
+Portugese Guides/Song Sections/Portugese - Bridge 3.wav
+Portugese Guides/Song Sections/Portugese - Bridge 3.wav.asd
+Portugese Guides/Song Sections/Portugese - Bridge 4.wav
+Portugese Guides/Song Sections/Portugese - Bridge 4.wav.asd
+Portugese Guides/Song Sections/Portugese - Bridge.wav
+Portugese Guides/Song Sections/Portugese - Bridge.wav.asd
+Portugese Guides/Song Sections/Portugese - Chorus 1.wav
+Portugese Guides/Song Sections/Portugese - Chorus 1.wav.asd
+Portugese Guides/Song Sections/Portugese - Chorus 2.wav
+Portugese Guides/Song Sections/Portugese - Chorus 2.wav.asd
+Portugese Guides/Song Sections/Portugese - Chorus 3.wav
+Portugese Guides/Song Sections/Portugese - Chorus 3.wav.asd
+Portugese Guides/Song Sections/Portugese - Chorus 4.wav
+Portugese Guides/Song Sections/Portugese - Chorus 4.wav.asd
+Portugese Guides/Song Sections/Portugese - Chorus.wav
+Portugese Guides/Song Sections/Portugese - Chorus.wav.asd
+Portugese Guides/Song Sections/Portugese - Ending.wav
+Portugese Guides/Song Sections/Portugese - Ending.wav.asd
+Portugese Guides/Song Sections/Portugese - Exhortation.wav
+Portugese Guides/Song Sections/Portugese - Exhortation.wav.asd
+Portugese Guides/Song Sections/Portugese - Instrumental.wav
+Portugese Guides/Song Sections/Portugese - Instrumental.wav.asd
+Portugese Guides/Song Sections/Portugese - Interlude.wav
+Portugese Guides/Song Sections/Portugese - Interlude.wav.asd
+Portugese Guides/Song Sections/Portugese - Intro.wav
+Portugese Guides/Song Sections/Portugese - Intro.wav.asd
+Portugese Guides/Song Sections/Portugese - Outro.wav
+Portugese Guides/Song Sections/Portugese - Outro.wav.asd
+Portugese Guides/Song Sections/Portugese - Post Chorus.wav
+Portugese Guides/Song Sections/Portugese - Post Chorus.wav.asd
+Portugese Guides/Song Sections/Portugese - Pre Chorus 1.wav
+Portugese Guides/Song Sections/Portugese - Pre Chorus 1.wav.asd
+Portugese Guides/Song Sections/Portugese - Pre Chorus 2.wav
+Portugese Guides/Song Sections/Portugese - Pre Chorus 2.wav.asd
+Portugese Guides/Song Sections/Portugese - Pre Chorus 3.wav
+Portugese Guides/Song Sections/Portugese - Pre Chorus 3.wav.asd
+Portugese Guides/Song Sections/Portugese - Pre Chorus 4.wav
+Portugese Guides/Song Sections/Portugese - Pre Chorus 4.wav.asd
+Portugese Guides/Song Sections/Portugese - Pre Chorus.wav
+Portugese Guides/Song Sections/Portugese - Pre Chorus.wav.asd
+Portugese Guides/Song Sections/Portugese - Rap.wav
+Portugese Guides/Song Sections/Portugese - Refrain.wav
+Portugese Guides/Song Sections/Portugese - Refrain.wav.asd
+Portugese Guides/Song Sections/Portugese - Solo.wav
+Portugese Guides/Song Sections/Portugese - Solo.wav.asd
+Portugese Guides/Song Sections/Portugese - Tag.wav
+Portugese Guides/Song Sections/Portugese - Tag.wav.asd
+Portugese Guides/Song Sections/Portugese - Turnaround.wav
+Portugese Guides/Song Sections/Portugese - Vamp.wav
+Portugese Guides/Song Sections/Portugese - Vamp.wav.asd
+Portugese Guides/Song Sections/Portugese - Verse 1.wav
+Portugese Guides/Song Sections/Portugese - Verse 1.wav.asd
+Portugese Guides/Song Sections/Portugese - Verse 2.wav
+Portugese Guides/Song Sections/Portugese - Verse 2.wav.asd
+Portugese Guides/Song Sections/Portugese - Verse 3.wav
+Portugese Guides/Song Sections/Portugese - Verse 3.wav.asd
+Portugese Guides/Song Sections/Portugese - Verse 4.wav
+Portugese Guides/Song Sections/Portugese - Verse 4.wav.asd
+Portugese Guides/Song Sections/Portugese - Verse 5.wav
+Portugese Guides/Song Sections/Portugese - Verse 5.wav.asd
+Portugese Guides/Song Sections/Portugese - Verse 6.wav
+Portugese Guides/Song Sections/Portugese - Verse 6.wav.asd
+Portugese Guides/Song Sections/Portugese - Verse.wav
+Portugese Guides/Song Sections/Portugese - Verse.wav.asd
+Spanish Guides/.DS_Store
+Spanish Guides/Guide Cues/Spanish - A Capella.wav
+Spanish Guides/Guide Cues/Spanish - A Capella.wav.asd
+Spanish Guides/Guide Cues/Spanish - All In (Toda La Banda).wav
+Spanish Guides/Guide Cues/Spanish - Bass (Bajo).wav
+Spanish Guides/Guide Cues/Spanish - Big Ending (Final Grande).wav
+Spanish Guides/Guide Cues/Spanish - Break (Pausa).wav
+Spanish Guides/Guide Cues/Spanish - Build (Sube Intensidad).wav
+Spanish Guides/Guide Cues/Spanish - Drums (Bateria).wav
+Spanish Guides/Guide Cues/Spanish - Drums In (Entra Bateria).wav
+Spanish Guides/Guide Cues/Spanish - Guitar (Guitara).wav
+Spanish Guides/Guide Cues/Spanish - Hits.wav
+Spanish Guides/Guide Cues/Spanish - Hold (Sostener).wav
+Spanish Guides/Guide Cues/Spanish - Key Change Down (Baja Tono).wav
+Spanish Guides/Guide Cues/Spanish - Key Change Up (Sube Tono).wav
+Spanish Guides/Guide Cues/Spanish - Keys (Teclado).wav
+Spanish Guides/Guide Cues/Spanish - Last Time (Ultima Vez).wav
+Spanish Guides/Guide Cues/Spanish - Softly (Suave).wav
+Spanish Guides/Guide Cues/Spanish - Swell.wav
+Spanish Guides/Song Sections/.DS_Store
+Spanish Guides/Song Sections/Spanish - 1.wav
+Spanish Guides/Song Sections/Spanish - 1.wav.asd
+Spanish Guides/Song Sections/Spanish - 2.wav
+Spanish Guides/Song Sections/Spanish - 2.wav.asd
+Spanish Guides/Song Sections/Spanish - 3.wav
+Spanish Guides/Song Sections/Spanish - 3.wav.asd
+Spanish Guides/Song Sections/Spanish - 4.wav
+Spanish Guides/Song Sections/Spanish - 4.wav.asd
+Spanish Guides/Song Sections/Spanish - 5.wav
+Spanish Guides/Song Sections/Spanish - 5.wav.asd
+Spanish Guides/Song Sections/Spanish - 6.wav
+Spanish Guides/Song Sections/Spanish - 6.wav.asd
+Spanish Guides/Song Sections/Spanish - 7.wav
+Spanish Guides/Song Sections/Spanish - 7.wav.asd
+Spanish Guides/Song Sections/Spanish - Baja Intensidad (Breakdown).wav
+Spanish Guides/Song Sections/Spanish - Baja Intensidad (Breakdown).wav.asd
+Spanish Guides/Song Sections/Spanish - Coro (Chorus).wav
+Spanish Guides/Song Sections/Spanish - Coro (Chorus).wav.asd
+Spanish Guides/Song Sections/Spanish - Coro 1 (Chorus 1).wav
+Spanish Guides/Song Sections/Spanish - Coro 1 (Chorus 1).wav.asd
+Spanish Guides/Song Sections/Spanish - Coro 2 (Chorus 2).wav
+Spanish Guides/Song Sections/Spanish - Coro 2 (Chorus 2).wav.asd
+Spanish Guides/Song Sections/Spanish - Coro 3 (Chorus 3).wav
+Spanish Guides/Song Sections/Spanish - Coro 3 (Chorus 3).wav.asd
+Spanish Guides/Song Sections/Spanish - Coro 4 (Chorus 4).wav
+Spanish Guides/Song Sections/Spanish - Coro 4 (Chorus 4).wav.asd
+Spanish Guides/Song Sections/Spanish - Ending (Final).wav
+Spanish Guides/Song Sections/Spanish - Ending (Final).wav.asd
+Spanish Guides/Song Sections/Spanish - Exhortation.wav
+Spanish Guides/Song Sections/Spanish - Exhortation.wav.asd
+Spanish Guides/Song Sections/Spanish - Instrumental.wav
+Spanish Guides/Song Sections/Spanish - Instrumental.wav.asd
+Spanish Guides/Song Sections/Spanish - Interludio (Interlude).wav
+Spanish Guides/Song Sections/Spanish - Interludio (Interlude).wav.asd
+Spanish Guides/Song Sections/Spanish - Intro.wav
+Spanish Guides/Song Sections/Spanish - Intro.wav.asd
+Spanish Guides/Song Sections/Spanish - Outro.wav
+Spanish Guides/Song Sections/Spanish - Outro.wav.asd
+Spanish Guides/Song Sections/Spanish - Post Coro (Post Chorus).wav
+Spanish Guides/Song Sections/Spanish - Post Coro (Post Chorus).wav.asd
+Spanish Guides/Song Sections/Spanish - Pre Coro (Pre Chorus).wav
+Spanish Guides/Song Sections/Spanish - Pre Coro (Pre Chorus).wav.asd
+Spanish Guides/Song Sections/Spanish - Pre Coro 1 (Pre Chorus 1).wav
+Spanish Guides/Song Sections/Spanish - Pre Coro 1 (Pre Chorus 1).wav.asd
+Spanish Guides/Song Sections/Spanish - Pre Coro 2 (Pre Chorus 2).wav
+Spanish Guides/Song Sections/Spanish - Pre Coro 2 (Pre Chorus 2).wav.asd
+Spanish Guides/Song Sections/Spanish - Pre Coro 3 (Pre Chorus 3).wav
+Spanish Guides/Song Sections/Spanish - Pre Coro 3 (Pre Chorus 3).wav.asd
+Spanish Guides/Song Sections/Spanish - Pre Coro 4 (Pre Chorus 4).wav
+Spanish Guides/Song Sections/Spanish - Pre Coro 4 (Pre Chorus 4).wav.asd
+Spanish Guides/Song Sections/Spanish - Puente (Bridge).wav
+Spanish Guides/Song Sections/Spanish - Puente (Bridge).wav.asd
+Spanish Guides/Song Sections/Spanish - Puente 1 (Bridge 1).wav
+Spanish Guides/Song Sections/Spanish - Puente 1 (Bridge 1).wav.asd
+Spanish Guides/Song Sections/Spanish - Puente 2 (Bridge 2).wav
+Spanish Guides/Song Sections/Spanish - Puente 2 (Bridge 2).wav.asd
+Spanish Guides/Song Sections/Spanish - Puente 3 (Bridge 3).wav
+Spanish Guides/Song Sections/Spanish - Puente 3 (Bridge 3).wav.asd
+Spanish Guides/Song Sections/Spanish - Puente 4 (Bridge 4).wav
+Spanish Guides/Song Sections/Spanish - Puente 4 (Bridge 4).wav.asd
+Spanish Guides/Song Sections/Spanish - Rap.wav
+Spanish Guides/Song Sections/Spanish - Refrain.wav
+Spanish Guides/Song Sections/Spanish - Refrain.wav.asd
+Spanish Guides/Song Sections/Spanish - Repetir (Tag).wav
+Spanish Guides/Song Sections/Spanish - Repetir (Tag).wav.asd
+Spanish Guides/Song Sections/Spanish - Solo.wav
+Spanish Guides/Song Sections/Spanish - Solo.wav.asd
+Spanish Guides/Song Sections/Spanish - Vamp.wav
+Spanish Guides/Song Sections/Spanish - Vamp.wav.asd
+Spanish Guides/Song Sections/Spanish - Verso (Verse).wav
+Spanish Guides/Song Sections/Spanish - Verso (Verse).wav.asd
+Spanish Guides/Song Sections/Spanish - Verso 1 (Verse 1).wav
+Spanish Guides/Song Sections/Spanish - Verso 1 (Verse 1).wav.asd
+Spanish Guides/Song Sections/Spanish - Verso 2 (Verse 2).wav
+Spanish Guides/Song Sections/Spanish - Verso 2 (Verse 2).wav.asd
+Spanish Guides/Song Sections/Spanish - Verso 3 (Verse 3).wav
+Spanish Guides/Song Sections/Spanish - Verso 3 (Verse 3).wav.asd
+Spanish Guides/Song Sections/Spanish - Verso 4 (Verse 4).wav
+Spanish Guides/Song Sections/Spanish - Verso 4 (Verse 4).wav.asd
+Spanish Guides/Song Sections/Spanish - Verso 5 (Verse 5).wav
+Spanish Guides/Song Sections/Spanish - Verso 5 (Verse 5).wav.asd
+Spanish Guides/Song Sections/Spanish - Verso 6 (Verse 6).wav
+Spanish Guides/Song Sections/Spanish - Verso 6 (Verse 6).wav.asd
