@@ -4,6 +4,7 @@ import { newSong, validateSong, uniqueId, sanitizeStemName, STEM_EXTENSIONS, LIM
 import { buildGrid } from '/shared/grid.js';
 import { buildSchedule } from '/shared/schedule.js';
 import { peaks } from '/shared/waveform.js';
+import { createHistory } from '/shared/history.js';
 import { createControlBar } from './controlbar.js';
 import { createBrowser } from './browser.js';
 import { createArrangement } from './arrangement.js';
@@ -36,6 +37,8 @@ async function start(catalog) {
   let view = 'arrangement'; // or 'session' (Tab switches)
   let position = null; // last playback position
   let fitPending = false; // zoom-to-fit the arrangement once it is visible
+  let solo = new Set(); // soloed track ids; rehearsal only, never saved
+  const history = createHistory();
   let loop = null; // loop brace { startBar, endBar } or null
   let loopOn = false;
   let grid = null; // last grid that could be built (kept while tempo/meter fields are being fixed)
@@ -68,7 +71,7 @@ async function start(catalog) {
   const controlbar = createControlBar($('controlbar'), {
     onTempo: (bpm) => {
       song.tempo[0].bpm = bpm;
-      changed({ structural: selection?.kind === 'tempo' });
+      changed({ structural: selection?.kind === 'tempo', mergeKey: 'tempo.0.bpm' });
     },
     onMeter: (beats, unit) => {
       Object.assign(song.meter[0], { beats, unit });
@@ -105,10 +108,9 @@ async function start(catalog) {
       cursor = at;
       render();
     },
-    onTrackChange: (track) => {
-      player.setTrack(track);
-      changed({ live: true, structural: selection?.ref === track });
-    },
+    onTrackChange: trackChanged,
+    onSolo: toggleSolo,
+    onDropFiles: (files, track) => importAudio(files, track),
     onMasterChange: (key, db) => {
       settings.mix[key] = db;
       player.setMix({ [key]: db });
@@ -133,10 +135,8 @@ async function start(catalog) {
   });
   const session = createSession($('session'), {
     onLaunch: launch,
-    onTrackChange: (track) => {
-      player.setTrack(track);
-      changed({ live: true, structural: selection?.ref === track });
-    },
+    onTrackChange: trackChanged,
+    onSolo: toggleSolo,
     onMasterChange: (key, db) => {
       settings.mix[key] = db;
       player.setMix({ [key]: db });
@@ -160,7 +160,7 @@ async function start(catalog) {
     onChange: (path, { structural }) => {
       const track = path.match(/^tracks\.(\d+)\.(volumeDb|muted|output)$/);
       if (track) player.setTrack(song.tracks[Number(track[1])]);
-      changed({ structural, live: Boolean(track) });
+      changed({ structural, live: Boolean(track), mergeKey: structural ? undefined : path });
     },
     onDelete: deleteSelection,
   });
@@ -182,17 +182,43 @@ async function start(catalog) {
     if (i !== undefined) select(itemOfPath(errors[Number(i)].path));
     if (e.target.closest('[data-action="toggle-messages"]')) $('statusbar').classList.toggle('open');
   });
+  // Cmd/Ctrl+S save · Cmd/Ctrl+Z undo · Cmd/Ctrl+Shift+Z (or Ctrl+Y) redo. In a text field the
+  // browser's own text undo applies.
+  document.addEventListener('keydown', (e) => {
+    if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+    const key = e.key.toLowerCase();
+    const typing = e.target.closest?.('input[type="text"], input[type="number"], textarea');
+    if (key === 's') {
+      e.preventDefault();
+      document.activeElement?.blur?.(); // apply a field that commits when you leave it
+      save();
+    } else if ((key === 'z' && e.shiftKey) || (key === 'y' && !e.shiftKey)) {
+      if (typing) return;
+      e.preventDefault();
+      restore(history.redo());
+    } else if (key === 'z') {
+      if (typing) return;
+      e.preventDefault();
+      restore(history.undo());
+    }
+  });
+  // Dropping a file anywhere else must not make the browser open it (and leave the app).
+  for (const type of ['dragover', 'drop']) {
+    window.addEventListener(type, (e) => {
+      if (e.dataTransfer?.types.includes('Files') && !e.defaultPrevented) e.preventDefault();
+    });
+  }
   // Space play/stop · Tab Arrangement/Session · 1–9 launch section · L loop the section heard ·
   // ←/→ previous/next setlist song (stopped) · Delete removes the selection · Esc selects the song ·
   // +/− zoom
   document.addEventListener('keydown', (e) => {
-    if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, select, textarea')) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, select, textarea')) return;
     const digit = e.code.match(/^(?:Digit|Numpad)([1-9])$/);
     if (e.key === 'Tab' && !e.shiftKey) setView(view === 'arrangement' ? 'session' : 'arrangement');
     else if (digit) launch(Number(digit[1]) - 1);
     else if (e.code === 'KeyL') toggleSectionLoop();
     else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') setlists.step(e.code === 'ArrowLeft' ? -1 : 1);
-    else if (e.code === 'Space' && !e.target.closest('button')) togglePlay();
+    else if (e.code === 'Space' && !e.target.closest?.('button')) togglePlay();
     else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelection();
     else if (e.key === 'Escape') select(null);
     else if (e.key === '+' || e.key === '=') arrangement.zoom(1.5);
@@ -215,6 +241,9 @@ async function start(catalog) {
     loopOn = false;
     player.setLoop(null);
     controlbar.setLoop(false);
+    solo = new Set();
+    player.setSolo(solo);
+    history.reset(snapshotOf(song));
     grid = null;
     extraMessages = [];
     setNote('');
@@ -267,8 +296,9 @@ async function start(catalog) {
    * Call after every edit. `structural` re-renders the Detail panel; `live` marks changes the
    * player applies at once (volume, mute, output), so no "press Play again" note is needed.
    */
-  function changed({ structural = false, live = false } = {}) {
+  function changed({ structural = false, live = false, mergeKey } = {}) {
     if (selection && !contains(selection)) selection = null;
+    history.push(snapshotOf(song), { mergeKey });
     errors = validateSong(song);
     try {
       grid = buildGrid(song);
@@ -291,8 +321,8 @@ async function start(catalog) {
   }
 
   function render() {
-    arrangement.render({ song, grid, selection, invalid: invalidItems(), cursor, mix: settings.mix, loop, loopOn });
-    if (view === 'session') session.render({ song, grid, sections: sections(), selection, mix: settings.mix });
+    arrangement.render({ song, grid, selection, invalid: invalidItems(), cursor, mix: settings.mix, loop, loopOn, solo });
+    if (view === 'session') session.render({ song, grid, sections: sections(), selection, mix: settings.mix, solo });
     controlbar.render(song);
     if (!player.playing) showPosition(null);
     const dirty = isNew || isDirty();
@@ -307,6 +337,43 @@ async function start(catalog) {
         : 'Save a stereo WAV: left = in-ears, right = main',
     });
     renderStatus();
+  }
+
+  // Volume, mute or output from a mixer: heard at once; a fader drag is one undo step.
+  function trackChanged(track, field) {
+    player.setTrack(track);
+    changed({ live: true, structural: selection?.ref === track, mergeKey: field === 'volumeDb' ? `${track.id}.volumeDb` : undefined });
+  }
+
+  // Plain click: solo just this track (again: no solo). Cmd/Ctrl-click: add or remove it.
+  function toggleSolo(track, additive) {
+    if (additive) {
+      solo = new Set(solo);
+      if (solo.has(track.id)) solo.delete(track.id);
+      else solo.add(track.id);
+    } else {
+      solo = solo.size === 1 && solo.has(track.id) ? new Set() : new Set([track.id]);
+    }
+    player.setSolo(solo);
+    render();
+  }
+
+  // Undo history holds the song without its id: saving a new song gives it an id, which is not an
+  // edit, and undo must never take it away (the next save would create a second song).
+  function snapshotOf(s) {
+    return JSON.stringify({ ...s, id: '' });
+  }
+
+  // Undo/redo: put a snapshot back under the song's current id.
+  function restore(snapshot) {
+    if (snapshot === null) return;
+    const { id } = song;
+    song = { ...JSON.parse(snapshot), id };
+    selection = null;
+    for (const t of song.tracks) player.setTrack(t);
+    solo = new Set([...solo].filter((tid) => song.tracks.some((t) => t.id === tid)));
+    player.setSolo(solo);
+    changed({ structural: true });
   }
 
   function select(next) {
@@ -435,9 +502,10 @@ async function start(catalog) {
     return null;
   }
 
-  // Uploads the files one at a time and adds an audio track for each, clip at 0 s. A song that
-  // was never saved is saved first (its folder must exist to hold the files).
-  async function importAudio(files) {
+  // Uploads the files one at a time and adds an audio track for each, clip at 0 s. The first file
+  // goes into `target` instead when it is an audio track without a clip. A song that was never
+  // saved is saved first (its folder must exist to hold the files).
+  async function importAudio(files, target = null) {
     if (isNew && !(await save())) {
       setNote('Fix the problems in the song before importing audio.');
       return;
@@ -458,7 +526,13 @@ async function start(catalog) {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error ?? res.statusText);
-        added.push(addAudioTrack(data.file));
+        if (target && !target.clip && song.tracks.includes(target)) {
+          target.clip = { file: data.file, startSec: 0 };
+          added.push(target);
+          target = null;
+        } else {
+          added.push(addAudioTrack(data.file));
+        }
       } catch (err) {
         failed.push(`Not added: ${file.name}: ${err.message}`);
       }

@@ -7,7 +7,9 @@ import { esc, options, formatDb, TRACK_COLORS, OUTPUT_NAMES } from './ui.js';
 
 /**
  * @param {HTMLElement} el
- * @param {{ onLaunch: (section: number) => void, onTrackChange: (track: object) => void,
+ * @param {{ onLaunch: (section: number) => void,
+ *           onTrackChange: (track: object, field: 'volumeDb'|'muted'|'output') => void,
+ *           onSolo: (track: object, additive: boolean) => void,
  *           onMasterChange: (key: 'inEarsDb'|'mainDb', db: number) => void,
  *           onSelect: (sel: { kind: string, ref: object } | null) => void,
  *           getPeaks: (track: object) => { duration: number } | null }} handlers
@@ -26,13 +28,13 @@ export function createSession(el, handlers) {
     if (launch) return handlers.onLaunch(Number(launch.dataset.launch));
     const name = e.target.closest('[data-select-track]');
     if (name) return handlers.onSelect({ kind: 'track', ref: trackById(name.dataset.selectTrack) });
-    const mute = e.target.closest('[data-field="muted"]');
-    const track = mute && trackById(mute.closest('[data-track]').dataset.track);
-    if (track) {
-      track.muted = !track.muted;
-      mute.setAttribute('aria-pressed', String(track.muted));
-      handlers.onTrackChange(track);
-    }
+    const button = e.target.closest('[data-field="muted"], [data-field="solo"]');
+    const track = button && trackById(button.closest('[data-track]').dataset.track);
+    if (!track) return;
+    if (button.dataset.field === 'solo') return handlers.onSolo(track, e.metaKey || e.ctrlKey);
+    track.muted = !track.muted;
+    button.setAttribute('aria-pressed', String(track.muted));
+    handlers.onTrackChange(track, 'muted');
   });
 
   el.addEventListener('input', (e) => {
@@ -51,13 +53,13 @@ export function createSession(el, handlers) {
     } else if (field.dataset.field === 'output') {
       track.output = field.value;
     }
-    handlers.onTrackChange(track);
+    handlers.onTrackChange(track, field.dataset.field);
   });
 
   return {
     /**
      * @param {{ song: object, grid: object, sections: { name: string, startBar: number, endBar: number }[],
-     *           selection: object|null, mix: { inEarsDb: number, mainDb: number } }} next
+     *           selection: object|null, mix: { inEarsDb: number, mainDb: number }, solo: Set<string> }} next
      */
     render(next) {
       view = next;
@@ -131,7 +133,10 @@ export function createSession(el, handlers) {
             <input type="range" data-field="volumeDb" min="${LIMITS.volumeDb[0]}" max="${LIMITS.volumeDb[1]}" step="1" aria-label="${esc(t.name)} volume">
             <output class="small"></output>
           </div>
-          <button type="button" class="mute" data-field="muted" aria-label="Mute ${esc(t.name)}" title="Mute">M</button>
+          <span class="ses-buttons">
+            <button type="button" class="mute" data-field="muted" aria-label="Mute ${esc(t.name)}" title="Mute">M</button>
+            <button type="button" class="solo" data-field="solo" aria-label="Solo ${esc(t.name)}" title="Solo (Cmd/Ctrl-click to add)">S</button>
+          </span>
         </div>
       </div>`;
   }
@@ -166,6 +171,7 @@ export function createSession(el, handlers) {
     if (document.activeElement !== vol) vol.value = t.volumeDb;
     vol.nextElementSibling.value = formatDb(t.volumeDb);
     col.querySelector('[data-field="muted"]').setAttribute('aria-pressed', String(t.muted));
+    col.querySelector('[data-field="solo"]').setAttribute('aria-pressed', String(view.solo.has(t.id)));
     const out = col.querySelector('[data-field="output"]');
     if (document.activeElement !== out) out.value = t.output;
     col.classList.toggle('muted-track', t.muted);
