@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "id": "hello-again",
+  "title": "hello again",
+  "bpm": 120,
+  "meter": [
+    4,
+    4
+  ],
+  "click": {
+    "sound": "Classic",
+    "subdivision": "quarter",
+    "volumeDb": 0
+  },
+  "guide": {
+    "language": "en",
+    "volumeDb": 0
+  },
+  "countInBars": 1,
+  "sections": [
+    {
+      "name": "Intro",
+      "bars": 4
+    },
+    {
+      "name": "Verse 1",
+      "bars": 8
+    },
+    {
+      "name": "Chorus",
+      "bars": 8
+    }
+  ],
+  "cues": [],
+  "stems": [],
+  "stemOffsetMs": 0
+}
