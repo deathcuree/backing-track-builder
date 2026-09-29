@@ -140,7 +140,7 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
 8. **Export.** Save, then **Export WAV**: left = everything routed to In-ears or Both, right =
    everything routed to Main or Both, from bar 1 to the end bar.
 9. **Insert marker.** Click anywhere in the arrangement (an empty lane, inside a waveform, or the bar
-   ruler): a blinking line and the orange triangle mark the spot, snapped to the grid for the zoom
+   ruler): a steady line and the orange triangle mark the spot, snapped to the grid for the zoom
    (Cmd/Ctrl-click for sixteenths), and the position box shows it. Click a Browser cue: it lands on the
    marker. **+** on Locators/Tempo/Time sig. adds at the marker's bar. Press Play: playback starts at
    the marker, even in the middle of a bar; Stop returns to it.
