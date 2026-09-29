@@ -1,82 +1,134 @@
-import { newSong, validateSong, uniqueId } from '/shared/song.js';
+// App shell: loads the catalog and songs, owns the open song, the selection and the start bar,
+// and connects the Control Bar, Browser, Arrangement, Detail panel, player and export.
+import { newSong, validateSong, uniqueId, sanitizeStemName, STEM_EXTENSIONS, LIMITS } from '/shared/song.js';
+import { buildGrid } from '/shared/grid.js';
 import { buildSchedule } from '/shared/schedule.js';
-import { createEditor, esc, formatDb } from './editor.js';
-import { createTimeline } from './timeline.js';
+import { peaks } from '/shared/waveform.js';
+import { createControlBar } from './controlbar.js';
+import { createBrowser } from './browser.js';
+import { createArrangement } from './arrangement.js';
+import { createDetail } from './detail.js';
 import { Player } from './player.js';
-import { createLiveView } from './live.js';
 import { exportSong } from './export.js';
+import { esc, clock } from './ui.js';
 
 const $ = (id) => document.getElementById(id);
-
-let catalog;
-let songs = [];
-let song = null;
-let savedJson = null; // JSON of the song as opened or last saved
-let isNew = false; // never saved
-let sectionStarts = [];
-let uploading = false;
-let exporting = false;
-let view = 'edit';
+const PEAK_BUCKET = 256; // samples per waveform bucket (~170 per second at 44.1 kHz)
+const AUDIO_TRACK_COLORS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
 
 const catalogRes = await fetch('/samples/catalog.json').catch(() => null);
 if (!catalogRes?.ok) {
   $('app').hidden = true;
   $('setup').hidden = false;
 } else {
-  catalog = await catalogRes.json();
-  await start();
+  await start(await catalogRes.json());
 }
 
-async function start() {
-  const editor = createEditor($('editor'), { catalog, onChange: changed, onAddStems: uploadStems });
-  const timeline = createTimeline($('timeline'), { onBarClick: (bar) => editor.addCue(bar) });
+async function start(catalog) {
+  let song = null;
+  let savedJson = null; // JSON of the song as opened or last saved
+  let isNew = false; // never saved
+  let songs = [];
+  let selection = null; // { kind: 'track'|'cue'|'locator'|'tempo'|'meter', ref } or null (the song)
+  let startBar = 1;
+  let grid = null; // last grid that could be built (kept while tempo/meter fields are being fixed)
+  let errors = [];
+  let warnings = [];
+  let busy = ''; // 'uploading' | 'exporting' | ''
+  let note = '';
+  let settings = null;
+  let extraMessages = []; // import/export/load problems shown until the next song is opened
+  const waveforms = new Map(); // "<song id>/<file>" -> { peaks, sampleRate, duration } | 'loading' | 'failed'
+
   const player = new Player({
     onPosition: (pos) => {
-      if (view === 'live') {
-        $('position').textContent = !pos ? 'Stopped' : pos.countIn ? `Count-in · beat ${pos.beat}` : `Bar ${pos.bar} · beat ${pos.beat}`;
-        return live.setPosition(pos);
-      }
-      timeline.setPosition(pos);
+      arrangement.setPlayhead(pos ? pos.songSec : null, true);
       showPosition(pos);
     },
     onStateChange: (playing) => {
-      $('play').textContent = playing ? '■ Stop' : '▶ Play';
-      $('play').setAttribute('aria-pressed', String(playing));
-      if (!playing) $('play-note').textContent = '';
-      if (view === 'live') live.setPlaying(playing);
+      controlbar.setPlaying(playing);
+      if (!playing) setNote('');
     },
   });
-  const live = createLiveView({
-    side: $('live-side'), main: $('live-show'), player, catalog, api,
-    getSongs: () => songs, showMessages,
+  const controlbar = createControlBar($('controlbar'), {
+    onTempo: (bpm) => {
+      song.tempo[0].bpm = bpm;
+      changed({ structural: selection?.kind === 'tempo' });
+    },
+    onMeter: (beats, unit) => {
+      Object.assign(song.meter[0], { beats, unit });
+      changed({ structural: selection?.kind === 'meter' });
+    },
+    onPlay: togglePlay,
+    onZoom: (factor) => arrangement.zoom(factor),
+    onImport: () => $('import-files').click(),
+    onExport: exportWav,
+    onSave: save,
+  });
+  const browser = createBrowser($('browser'), {
+    catalog,
+    onOpenSong: (id) => {
+      if (id !== song.id) whenSaved(async () => open(await api('GET', `/api/songs/${id}`), true));
+    },
+    onNewSong: () => whenSaved(() => open(newSong(), false)),
+    onAddCue: ({ type, key }) => {
+      const clip = { at: [startBar, 1, 1], type, key };
+      cuesTrack().clips.push(clip);
+      select({ kind: 'cue', ref: clip });
+    },
+  });
+  const arrangement = createArrangement($('arrangement'), {
+    onSelect: select,
+    onStartBar: (bar) => {
+      startBar = bar;
+      render();
+    },
+    onTrackChange: (track) => {
+      player.setTrack(track);
+      changed({ live: true, structural: selection?.ref === track });
+    },
+    onMasterChange: (key, db) => {
+      settings.mix[key] = db;
+      player.setMix({ [key]: db });
+      saveSettingsSoon();
+    },
+    onAdd: addAtStartBar,
+    getPeaks: waveformFor,
+  });
+  const detail = createDetail($('detail'), {
+    catalog,
+    onChange: (path, { structural }) => {
+      const track = path.match(/^tracks\.(\d+)\.(volumeDb|muted|output)$/);
+      if (track) player.setTrack(song.tracks[Number(track[1])]);
+      changed({ structural, live: Boolean(track) });
+    },
+    onDelete: deleteSelection,
   });
 
-  const settings = await api('GET', '/api/settings');
+  settings = await api('GET', '/api/settings');
   player.setMix(settings.mix);
-  setupMix(settings);
-
   songs = await api('GET', '/api/songs');
-  renderSongList();
-  open(songs[0] ? await api('GET', `/api/songs/${songs[0].id}`) : newSong(), songs[0] ? true : false);
+  open(songs[0] ? await api('GET', `/api/songs/${songs[0].id}`) : newSong(), Boolean(songs[0]));
 
-  $('play').addEventListener('click', togglePlay);
-  $('view-edit').addEventListener('click', () => setView('edit'));
-  $('view-live').addEventListener('click', () => whenSaved(() => setView('live')));
-  $('save').addEventListener('click', save);
-  $('export').addEventListener('click', exportWav);
-  $('new-song').addEventListener('click', () => whenSaved(() => open(newSong(), false)));
-  $('song-list').addEventListener('click', (e) => {
-    const id = e.target.closest('[data-id]')?.dataset.id;
-    if (id && id !== song.id) whenSaved(async () => open(await api('GET', `/api/songs/${id}`), true));
+  $('import-files').accept = STEM_EXTENSIONS.map((e) => `.${e}`).join(',');
+  $('import-files').addEventListener('change', (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    if (files.length) importAudio(files);
   });
-  // Space play/stop · 1–9 jump to section · L loop · ←/→ previous/next song (live view, stopped)
+  $('statusbar').addEventListener('click', (e) => {
+    const i = e.target.closest('[data-error]')?.dataset.error;
+    if (i !== undefined) select(itemOfPath(errors[Number(i)].path));
+    if (e.target.closest('[data-action="toggle-messages"]')) $('statusbar').classList.toggle('open');
+  });
+  // Space play/stop · Delete removes the selection · Esc selects the song · +/− zoom
   document.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, select, textarea')) return;
-    const digit = e.code.match(/^(?:Digit|Numpad)([1-9])$/);
     if (e.code === 'Space' && !e.target.closest('button')) togglePlay();
-    else if (digit) player.jump(Number(digit[1]) - 1);
-    else if (e.code === 'KeyL') player.toggleLoop();
-    else if (view === 'live' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) live.step(e.code === 'ArrowLeft' ? -1 : 1);
+    else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelection();
+    else if (e.key === 'Escape') select(null);
+    else if (e.key === '+' || e.key === '=') arrangement.zoom(1.5);
+    else if (e.key === '-') arrangement.zoom(1 / 1.5);
     else return;
     e.preventDefault();
   });
@@ -89,52 +141,224 @@ async function start() {
     song = next;
     savedJson = JSON.stringify(song);
     isNew = !saved;
-    editor.show(song);
-    changed();
-    renderSongList();
+    selection = null;
+    startBar = 1;
+    grid = null;
+    extraMessages = [];
+    setNote('');
+    changed({ structural: true });
+    arrangement.fit();
+    browser.renderSongs(songs, song.id);
   }
 
-  function changed(path) {
-    const live = path?.match(/^stems\.(\d+)\.(volumeDb|muted)$/);
-    if (live) player.setStemGain(song.stems[Number(live[1])]);
-    const errors = validateSong(song);
-    editor.showErrors(errors);
-    let warnings = [];
-    let totalBars = 0;
-    if (!errors.length) {
-      const schedule = buildSchedule(song, catalog);
-      warnings = schedule.warnings;
-      totalBars = schedule.totalBars;
-      sectionStarts = schedule.sections.map((s) => ({ name: s.name, startBar: s.startBar }));
+  /**
+   * Call after every edit. `structural` re-renders the Detail panel; `live` marks changes the
+   * player applies at once (volume, mute, output), so no "press Play again" note is needed.
+   */
+  function changed({ structural = false, live = false } = {}) {
+    if (selection && !contains(selection)) selection = null;
+    errors = validateSong(song);
+    try {
+      grid = buildGrid(song);
+    } catch {
+      // keep drawing the last good grid while a tempo or meter field is being fixed
     }
-    timeline.render(song, totalBars);
-    showMessages(warnings);
-    $('song-title').textContent = song.title || 'Untitled';
-    $('save-state').textContent = isNew ? 'Not saved yet' : isDirty() ? 'Unsaved changes' : 'Saved';
-    $('save-state').classList.toggle('dirty', isNew || isDirty());
-    if (player.playing && !live) $('play-note').textContent = 'Changes apply the next time you press Play.';
-    updateUploadState();
+    grid ??= buildGrid(newSong());
+    startBar = Math.min(startBar, grid.bars.length);
+    warnings = errors.length ? [] : buildSchedule(song, catalog).warnings;
+    if (structural) detail.show(song, selection);
+    detail.showErrors(errors);
+    browser.renderCues(cuesTrack()?.language ?? 'en');
+    if (player.playing && !live) note = 'Changes apply the next time you press Play.';
+    else if (!errors.length && note.startsWith('Fix the problems')) note = '';
+    render();
   }
 
-  function updateUploadState() {
-    editor.setUpload({
-      enabled: !isNew && !uploading,
-      message: isNew ? 'Save the song first, then add stems.' : uploading ? '' : 'WAV, MP3, M4A, FLAC or OGG.',
+  function render() {
+    arrangement.render({ song, grid, selection, invalid: invalidItems(), startBar, mix: settings.mix });
+    controlbar.render(song);
+    if (!player.playing) showPosition(null);
+    const dirty = isNew || isDirty();
+    controlbar.setSaveState(isNew ? 'Not saved yet' : dirty ? 'Unsaved changes' : 'Saved', dirty);
+    const exportBlocked = isNew || isDirty() || busy === 'uploading';
+    controlbar.setButtons({
+      save: busy !== 'uploading',
+      import: !busy,
+      importTitle: 'Add audio files as new tracks (WAV, MP3, M4A, FLAC or OGG)',
+      exportEnabled: !busy && !exportBlocked,
+      exportTitle: exportBlocked ? 'Save the song first; the export uses the saved version.'
+        : 'Save a stereo WAV: left = in-ears, right = main',
     });
-    $('save').disabled = uploading;
-    const exportBlocked = isNew || isDirty() || uploading;
-    $('export').disabled = exporting || exportBlocked;
-    $('export').title = exportBlocked
-      ? 'Save the song first; the export uses the saved version.'
-      : 'Save a stereo WAV: click + guide left, stems right';
+    renderStatus();
+  }
+
+  function select(next) {
+    selection = next;
+    changed({ structural: true, live: true });
+  }
+
+  function contains({ kind, ref }) {
+    if (kind === 'track') return song.tracks.includes(ref);
+    if (kind === 'cue') return Boolean(cuesTrack()?.clips.includes(ref));
+    if (kind === 'locator') return song.locators.includes(ref);
+    return song[kind].includes(ref);
+  }
+
+  function cuesTrack() {
+    return song.tracks.find((t) => t.type === 'cues');
+  }
+
+  // Adds a locator or marker at the start bar, or selects the one already there.
+  function addAtStartBar(kind) {
+    const list = kind === 'locator' ? song.locators : song[kind];
+    let item = list.find((m) => m.bar === startBar);
+    if (!item) {
+      const bar = grid.bars[startBar - 1];
+      item = kind === 'locator' ? { bar: startBar, name: 'Section' }
+        : kind === 'tempo' ? { bar: startBar, bpm: bar.bpm }
+          : { bar: startBar, beats: bar.beats, unit: bar.unit };
+      list.push(item);
+      if (kind !== 'locator') list.sort((a, b) => a.bar - b.bar);
+    }
+    select({ kind, ref: item });
+    if (kind === 'locator') detail.focus('name');
+  }
+
+  function deleteSelection() {
+    if (!selection) return;
+    const { kind, ref } = selection;
+    if (kind === 'track') {
+      if (ref.type !== 'audio') return;
+      song.tracks.splice(song.tracks.indexOf(ref), 1);
+    } else if (kind === 'cue') {
+      cuesTrack().clips.splice(cuesTrack().clips.indexOf(ref), 1);
+    } else {
+      const list = kind === 'locator' ? song.locators : song[kind];
+      if (kind !== 'locator' && list.indexOf(ref) === 0) return; // bar-1 markers stay
+      list.splice(list.indexOf(ref), 1);
+    }
+    selection = null;
+    changed({ structural: true });
+  }
+
+  // Validation errors point at items by path; outline those items in the arrangement.
+  function invalidItems() {
+    return new Set(errors.map((e) => itemOfPath(e.path)?.ref).filter(Boolean));
+  }
+
+  function itemOfPath(path) {
+    let m = path.match(/^tracks\[(\d+)\]\.clips\[(\d+)\]/);
+    if (m) return { kind: 'cue', ref: song.tracks[m[1]]?.clips?.[m[2]] };
+    m = path.match(/^tracks\[(\d+)\]/);
+    if (m) return { kind: 'track', ref: song.tracks[m[1]] };
+    m = path.match(/^(locators|tempo|meter)\[(\d+)\]/);
+    if (m) return { kind: m[1] === 'locators' ? 'locator' : m[1], ref: song[m[1]][m[2]] };
+    return null;
+  }
+
+  function waveformFor(track) {
+    const key = `${song.id}/${track.clip.file}`;
+    const known = waveforms.get(key);
+    if (known && typeof known === 'object') return known;
+    if (!known && song.id) {
+      waveforms.set(key, 'loading');
+      player.audioBuffer(song.id, track.clip.file).then((buffer) => {
+        const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+        waveforms.set(key, { peaks: peaks(channels, PEAK_BUCKET), sampleRate: buffer.sampleRate, duration: buffer.duration });
+        if (song.id && key.startsWith(`${song.id}/`)) render();
+      }, () => waveforms.set(key, 'failed'));
+    }
+    return null;
+  }
+
+  // Uploads the files one at a time and adds an audio track for each, clip at 0 s. A song that
+  // was never saved is saved first (its folder must exist to hold the files).
+  async function importAudio(files) {
+    if (isNew && !(await save())) {
+      setNote('Fix the problems in the song before importing audio.');
+      return;
+    }
+    busy = 'uploading';
+    player.stop();
+    render();
+    const added = [];
+    const failed = [];
+    for (const [i, file] of files.entries()) {
+      setNote(`Uploading ${file.name} (${i + 1} of ${files.length})…`);
+      try {
+        if (!sanitizeStemName(file.name)) throw new Error('unsupported file; use WAV, MP3, M4A, FLAC or OGG');
+        const res = await fetch(`/api/songs/${song.id}/stems`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name) },
+          body: file,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error ?? res.statusText);
+        added.push(addAudioTrack(data.file));
+      } catch (err) {
+        failed.push(`Not added: ${file.name}: ${err.message}`);
+      }
+    }
+    busy = '';
+    setNote(added.length ? `Added ${added.length} audio track${added.length > 1 ? 's' : ''}. Press Save to keep ${added.length > 1 ? 'them' : 'it'}.` : '');
+    if (added.length) selection = { kind: 'track', ref: added.at(-1) };
+    changed({ structural: true });
+    if (failed.length) showStatusMessages(failed);
+    for (const track of added) growToFit(track);
+  }
+
+  function addAudioTrack(file) {
+    const audio = song.tracks.filter((t) => t.type === 'audio');
+    const n = Math.max(0, ...audio.map((t) => Number(t.id.slice(1)))) + 1;
+    const track = {
+      id: `a${n}`, type: 'audio', name: file.replace(/\.[^.]+$/, '').slice(0, LIMITS.nameLength).trim() || `Audio ${n}`,
+      color: AUDIO_TRACK_COLORS[audio.length % AUDIO_TRACK_COLORS.length], volumeDb: 0, muted: false, output: 'both',
+      clip: { file, startSec: 0 },
+    };
+    song.tracks.push(track);
+    return track;
+  }
+
+  // Raises the song end so the clip ends inside the song (never lowers it).
+  async function growToFit(track) {
+    try {
+      const buffer = await player.audioBuffer(song.id, track.clip.file);
+      if (!song.tracks.includes(track)) return;
+      const clipEnd = track.clip.startSec + buffer.duration;
+      const g = buildGrid(song);
+      if (g.endSec >= clipEnd) return;
+      const last = g.bars.at(-1);
+      song.endBar = Math.min(LIMITS.endBar[1], song.endBar + Math.ceil((clipEnd - g.endSec) / last.sec));
+      changed({ structural: !selection });
+    } catch (err) {
+      showStatusMessages([`Audio "${track.name}" could not be read (${err.message || 'unsupported audio'}).`]);
+    }
+  }
+
+  async function togglePlay() {
+    if (player.playing) return player.stop();
+    if (errors.length) {
+      setNote('Fix the problems in the song before playing.');
+      return;
+    }
+    setNote('Loading…');
+    try {
+      const loadWarnings = await player.load(song, catalog);
+      warnings = loadWarnings;
+      setNote('');
+      renderStatus();
+      await player.play({ fromBar: startBar });
+    } catch (err) {
+      setNote(`Could not start playback: ${err.message}`);
+    }
   }
 
   // Renders the saved song to exports/<title>.wav and also downloads it.
   async function exportWav() {
     player.stop();
-    exporting = true;
-    updateUploadState();
-    $('play-note').textContent = 'Rendering WAV…';
+    busy = 'exporting';
+    render();
+    setNote('Rendering WAV…');
     try {
       const result = await exportSong(song, catalog);
       const link = document.createElement('a');
@@ -144,126 +368,41 @@ async function start() {
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
-      $('play-note').textContent = `Exported ${result.file} (${clock(result.seconds)}) to the exports folder.`;
-      showMessages(result.warnings);
+      setNote(`Exported ${result.file} (${clock(result.seconds)}) to the exports folder.`);
+      if (result.warnings.length) showStatusMessages(result.warnings);
     } catch (err) {
-      $('play-note').textContent = `Export failed: ${err.message}`;
+      setNote(`Export failed: ${err.message}`);
     } finally {
-      exporting = false;
-      updateUploadState();
-    }
-  }
-
-  // Uploads one file at a time, then adds the stems to the song (saved with the next Save).
-  async function uploadStems(files) {
-    uploading = true;
-    player.stop();
-    const added = [];
-    const failed = [];
-    try {
-      for (const [i, file] of files.entries()) {
-        editor.setUpload({ enabled: false, message: `Uploading ${file.name} (${i + 1} of ${files.length})…` });
-        try {
-          const res = await fetch(`/api/songs/${song.id}/stems`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name) },
-            body: file,
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error ?? res.statusText);
-          added.push(data);
-        } catch (err) {
-          failed.push(`${file.name}: ${err.message}`);
-        }
-      }
-    } finally {
-      uploading = false;
-    }
-    player.forgetStems();
-    if (added.length) editor.addStems(added);
-    else changed();
-    if (failed.length) showMessages(failed.map((f) => `Not added: ${f}`));
-    if (added.length) $('play-note').textContent = `Added ${added.length} stem${added.length > 1 ? 's' : ''}. Press Save to keep ${added.length > 1 ? 'them' : 'it'}.`;
-  }
-
-  function setupMix(current) {
-    let saveTimer;
-    for (const input of document.querySelectorAll('#mix input')) {
-      const key = input.dataset.mix;
-      input.value = current.mix[key];
-      input.nextElementSibling.value = formatDb(current.mix[key]);
-      input.addEventListener('input', () => {
-        const db = Number(input.value);
-        current.mix[key] = db;
-        input.nextElementSibling.value = formatDb(db);
-        player.setMix({ [key]: db });
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => api('PUT', '/api/settings', current).catch(() => {}), 400);
-      });
-    }
-  }
-
-  async function setView(next) {
-    if (next === view) return;
-    player.stop();
-    view = next;
-    $('view-edit').setAttribute('aria-pressed', String(view === 'edit'));
-    $('view-live').setAttribute('aria-pressed', String(view === 'live'));
-    for (const id of ['edit-side', 'edit-main']) $(id).hidden = view !== 'edit';
-    for (const id of ['live-side', 'live-main']) $(id).hidden = view !== 'live';
-    $('position').textContent = 'Stopped';
-    if (view === 'live') {
-      songs = await api('GET', '/api/songs');
-      showMessages([]);
-      await live.enter();
-    } else {
-      changed();
-    }
-  }
-
-  async function togglePlay() {
-    if (view === 'live') return live.togglePlay();
-    if (player.playing) return player.stop();
-    const errors = validateSong(song);
-    if (errors.length) {
-      editor.showErrors(errors);
-      $('play-note').textContent = 'Fix the errors in the song before playing.';
-      return;
-    }
-    $('play').disabled = true;
-    $('play-note').textContent = 'Loading samples…';
-    try {
-      showMessages(await player.load(song, catalog));
-      $('play-note').textContent = '';
-      await player.play();
-    } catch (err) {
-      $('play-note').textContent = `Could not start playback: ${err.message}`;
-    } finally {
-      $('play').disabled = false;
+      busy = '';
+      render();
     }
   }
 
   async function save() {
-    const errors = validateSong(song);
-    editor.showErrors(errors);
-    if (errors.length) return false;
+    if (errors.length) {
+      setNote('Fix the problems in the song before saving.');
+      return false;
+    }
     if (!song.id) song.id = uniqueId(song.title, songs.map((s) => s.id));
     try {
       await api('PUT', `/api/songs/${song.id}`, song);
     } catch (err) {
-      editor.showErrors(err.errors ?? [{ path: '', message: `Save failed: ${err.message}` }]);
+      setNote(`Save failed: ${err.message}`);
       return false;
     }
     savedJson = JSON.stringify(song);
     isNew = false;
-    const settings = await api('GET', '/api/settings');
-  player.setMix(settings.mix);
-  setupMix(settings);
-
-  songs = await api('GET', '/api/songs');
-    renderSongList();
-    changed();
+    note = '';
+    songs = await api('GET', '/api/songs');
+    browser.renderSongs(songs, song.id);
+    render();
     return true;
+  }
+
+  let settingsTimer;
+  function saveSettingsSoon() {
+    clearTimeout(settingsTimer);
+    settingsTimer = setTimeout(() => api('PUT', '/api/settings', settings).catch(() => {}), 400);
   }
 
   // Runs `action` (switch song / new song) once unsaved changes are saved or discarded.
@@ -290,38 +429,38 @@ async function start() {
     return JSON.stringify(song) !== savedJson;
   }
 
-  function renderSongList() {
-    $('song-list').innerHTML = songs.map((s) => `
-      <li><button type="button" data-id="${esc(s.id)}" ${s.id === song?.id ? 'aria-current="true"' : ''}>
-        <span>${esc(s.title)}</span>
-        <span class="muted">${esc(s.bpm)} BPM · ${esc(s.meter.join('/'))}</span>
-      </button></li>`).join('') || '<li class="muted empty">No songs yet.</li>';
-  }
-
   function showPosition(pos) {
-    const el = $('position');
-    if (!pos) {
-      el.textContent = 'Stopped';
-      return;
-    }
-    if (pos.countIn) {
-      el.textContent = `Count-in · beat ${pos.beat}`;
-      return;
-    }
-    const section = sectionStarts.findLast((s) => s.startBar <= pos.bar);
-    el.textContent = `Bar ${pos.bar} · beat ${pos.beat}${section ? ` · ${section.name}` : ''}`;
+    if (pos) return controlbar.setPosition(pos, pos.songSec);
+    const bar = grid.bars[startBar - 1];
+    controlbar.setPosition({ bar: startBar, beat: 1, sixteenth: 1 }, bar.startSec);
+    arrangement.setPlayhead(null);
   }
-}
 
-function clock(sec) {
-  const s = Math.round(sec);
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-}
+  function setNote(text) {
+    note = text;
+    renderStatus();
+  }
 
-function showMessages(warnings) {
-  const el = $(view === 'live' ? 'live-messages' : 'messages');
-  el.hidden = warnings.length === 0;
-  el.innerHTML = `<h2>Heads up</h2><ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>`;
+  function showStatusMessages(list) {
+    extraMessages = list;
+    renderStatus();
+  }
+
+  // Status bar: the latest note, then problems (click one to select its item) and heads-ups.
+  function renderStatus() {
+    const bar = $('statusbar');
+    const heads = [...warnings, ...extraMessages];
+    const count = errors.length + heads.length;
+    bar.innerHTML = `
+      <span class="status-note">${esc(note)}</span>
+      ${errors.length ? `<button type="button" class="status-problem" data-error="0">⚠ ${esc(errors[0].message)}</button>` : ''}
+      ${count ? `<button type="button" class="status-count" data-action="toggle-messages">${errors.length ? `${errors.length} problem${errors.length > 1 ? 's' : ''}` : ''}${errors.length && heads.length ? ' · ' : ''}${heads.length ? `${heads.length} heads-up` : ''}</button>` : ''}
+      <div class="status-messages">
+        ${errors.length ? `<h2>Problems</h2><ul>${errors.map((e, i) => `<li><button type="button" data-error="${i}">${esc(e.message)}</button></li>`).join('')}</ul>` : ''}
+        ${heads.length ? `<h2>Heads up</h2><ul>${heads.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+      </div>`;
+    if (!count) bar.classList.remove('open');
+  }
 }
 
 async function api(method, path, body) {

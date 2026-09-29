@@ -1,4 +1,4 @@
-// JSON API for songs, stems, setlists, settings and exports. Data lives under the project root:
+// JSON API for songs, audio files ("stems"), setlists, settings and exports. Data lives under the project root:
 // songs/<id>/song.json, songs/<id>/stems/<file>, setlists/<id>.json, settings.json and
 // exports/<title>.wav, so it can be backed up or edited by hand.
 import { readFile, writeFile, rename, mkdir, readdir, stat, unlink, open } from 'node:fs/promises';
@@ -9,7 +9,8 @@ import { validateSetlist } from '../shared/setlist.js';
 
 const MAX_BODY = 1024 * 1024;
 const DEFAULT_MAX_STEM_BYTES = 1024 * 1024 * 1024; // 1 GB; long 24-bit/96 kHz stems are big
-const DEFAULT_SETTINGS = { version: 1, routing: { mode: 'split' }, mix: { inEarStemsDb: 0, mainStemsDb: 0 } };
+const DEFAULT_SETTINGS = { version: 2, routing: { mode: 'split' }, mix: { inEarsDb: 0, mainDb: 0 } };
+const MIX_KEYS = ['inEarsDb', 'mainDb']; // master levels of the in-ear (left) and main (right) outputs
 const AUDIO_TYPES = { '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.flac': 'audio/flac', '.ogg': 'audio/ogg' };
 const ROUTING_MODES = ['split', 'interface'];
 
@@ -61,7 +62,7 @@ async function route(root, req, parts, options) {
     const errors = validateSong(song);
     if (errors.length) throw new HttpError(400, 'Song is not valid', { errors });
     await writeJson(file, song);
-    await pruneStems(join(root, 'songs', id, 'stems'), song.stems);
+    await pruneStems(join(root, 'songs', id, 'stems'), song.tracks);
     return song;
   }
   if (resource === 'songs' && rest[0] === 'stems' && parts.length === 3) {
@@ -124,7 +125,7 @@ async function route(root, req, parts, options) {
     if (!ROUTING_MODES.includes(settings.routing.mode)) {
       throw new HttpError(400, `routing.mode must be one of: ${ROUTING_MODES.join(', ')}`);
     }
-    for (const key of ['inEarStemsDb', 'mainStemsDb']) {
+    for (const key of MIX_KEYS) {
       const v = settings.mix[key];
       if (typeof v !== 'number' || v < LIMITS.volumeDb[0] || v > LIMITS.volumeDb[1]) {
         throw new HttpError(400, `mix.${key} must be between ${LIMITS.volumeDb[0]} and ${LIMITS.volumeDb[1]} dB`);
@@ -211,10 +212,10 @@ async function receiveFile(dir, req, maxBytes, what) {
   }
 }
 
-// Uploaded stems the saved song no longer lists are deleted (they are copies; originals stay
-// wherever the user uploaded them from). In-progress uploads (.part files) are left alone.
-async function pruneStems(dir, stems) {
-  const used = new Set(stems.map((s) => s.file));
+// Uploaded audio files no audio clip of the saved song uses are deleted (they are copies; originals
+// stay wherever the user uploaded them from). In-progress uploads (.part files) are left alone.
+async function pruneStems(dir, tracks) {
+  const used = new Set(tracks.filter((t) => t.type === 'audio' && t.clip).map((t) => t.clip.file));
   const files = await readdir(dir).catch(() => []);
   await Promise.all(files
     .filter((f) => sanitizeStemName(f) === f && !used.has(f))
@@ -239,13 +240,16 @@ function decodeHeader(value) {
   }
 }
 
+// Unknown mix keys (such as the version-1 stem levels) are dropped.
 function withDefaults(settings) {
   const s = settings && typeof settings === 'object' ? settings : {};
+  const mix = Object.fromEntries(MIX_KEYS.map((k) => [k, s.mix?.[k] ?? DEFAULT_SETTINGS.mix[k]]));
   return {
     ...DEFAULT_SETTINGS,
     ...s,
+    version: DEFAULT_SETTINGS.version,
     routing: { ...DEFAULT_SETTINGS.routing, ...s.routing },
-    mix: { ...DEFAULT_SETTINGS.mix, ...s.mix },
+    mix,
   };
 }
 
@@ -269,7 +273,9 @@ async function listSongs(root) {
   for (const e of entries) {
     if (!e.isDirectory() || !ID_RE.test(e.name)) continue;
     const song = await readJson(join(dir, e.name, 'song.json'), () => null).catch(() => null);
-    if (song) songs.push({ id: song.id, title: song.title, bpm: song.bpm, meter: song.meter });
+    if (song?.version !== 2) continue; // older formats can't be opened
+    const meter = song.meter?.[0];
+    songs.push({ id: song.id, title: song.title, bpm: song.tempo?.[0]?.bpm, meter: [meter?.beats, meter?.unit] });
   }
   return songs.sort((a, b) => String(a.title).localeCompare(String(b.title)));
 }
