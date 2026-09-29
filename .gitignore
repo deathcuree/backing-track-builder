@@ -2,7 +2,12 @@ node_modules/
 .DS_Store
 samples/*
 !samples/.gitkeep
-songs/*/stems/
+# Your songs, setlists and settings stay on this computer (only the empty folders are tracked).
+songs/*
+!songs/.gitkeep
+setlists/*
+!setlists/.gitkeep
+settings.json
 exports/*
 !exports/.gitkeep
 /.scratch
