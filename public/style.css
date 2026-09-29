@@ -142,7 +142,7 @@ input[type="range"] { padding: 0; border: 0; background: none; }
 .song-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .save-state { color: var(--muted); font-size: 0.85rem; }
 .save-state.dirty { color: var(--warn); }
-.song-header .primary { margin-left: auto; }
+.song-header #export { margin-left: auto; }
 
 .notice {
   display: flex;

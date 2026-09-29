@@ -251,3 +251,35 @@ test('setlists can be deleted', async () => {
   assert.equal((await call('GET', '/api/setlists/aaa')).status, 404);
   assert.equal((await call('DELETE', '/api/setlists/aaa')).status, 404);
 });
+
+function post(path, bytes) {
+  return new Promise((resolve, reject) => {
+    const req = request({ host: '127.0.0.1', port: server.address().port, method: 'POST', path,
+      headers: { 'Content-Type': 'audio/wav' } }, (res) => {
+      let text = '';
+      res.on('data', (c) => (text += c));
+      res.on('end', () => resolve({ status: res.statusCode, json: JSON.parse(text || '{}') }));
+    });
+    req.on('error', reject);
+    req.end(bytes);
+  });
+}
+
+test('exports are saved as exports/<song title>.wav and replace the previous export', async () => {
+  await call('PUT', '/api/songs/way-maker', song({ title: 'Way Maker (Live)' }));
+  const wav = Buffer.concat([Buffer.from('RIFF\0\0\0\0WAVE'), Buffer.alloc(100)]);
+  const first = await post('/api/exports/way-maker', wav);
+  assert.equal(first.status, 200);
+  assert.deepEqual(first.json, { file: 'Way Maker (Live).wav', size: wav.length });
+  const second = await post('/api/exports/way-maker', Buffer.concat([wav, Buffer.alloc(10)]));
+  assert.equal(second.json.size, wav.length + 10);
+  assert.equal(readFileSync(join(root, 'exports/Way Maker (Live).wav')).length, wav.length + 10);
+  assert.deepEqual(readdirSync(join(root, 'exports')).filter((f) => !f.startsWith('.')), ['Way Maker (Live).wav']);
+});
+
+test('exports must be WAV data for an existing song', async () => {
+  assert.equal((await post('/api/exports/way-maker', Buffer.from('not a wav file at all'))).status, 400);
+  assert.equal((await post('/api/exports/no-such-song', Buffer.from('RIFF\0\0\0\0WAVE'))).status, 404);
+  assert.equal((await post('/api/exports/..%2Fsettings', Buffer.from('RIFF\0\0\0\0WAVE'))).status, 400);
+  assert.equal((await call('GET', '/api/exports/way-maker')).status, 405);
+});

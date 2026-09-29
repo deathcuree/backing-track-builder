@@ -1,7 +1,7 @@
-// JSON API for songs, stems, setlists and settings. Data lives under the project root:
-// songs/<id>/song.json, songs/<id>/stems/<file>, setlists/<id>.json and settings.json, so it can
-// be backed up or edited by hand.
-import { readFile, writeFile, rename, mkdir, readdir, stat, unlink } from 'node:fs/promises';
+// JSON API for songs, stems, setlists, settings and exports. Data lives under the project root:
+// songs/<id>/song.json, songs/<id>/stems/<file>, setlists/<id>.json, settings.json and
+// exports/<title>.wav, so it can be backed up or edited by hand.
+import { readFile, writeFile, rename, mkdir, readdir, stat, unlink, open } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { join, extname } from 'node:path';
 import { validateSong, sanitizeStemName, LIMITS, ID_RE } from '../shared/song.js';
@@ -90,6 +90,11 @@ async function route(root, req, parts, options) {
       createReadStream(file).pipe(res);
     };
   }
+  if (resource === 'exports' && parts.length === 2) {
+    checkId(id);
+    allow(req, ['POST']);
+    return saveExport(root, id, req, options.maxStemBytes);
+  }
   if (resource === 'setlists' && parts.length === 1) {
     allow(req, ['GET']);
     return listSetlists(root);
@@ -139,8 +144,48 @@ async function uploadStem(root, id, req, maxBytes) {
   if (!(await stat(songFile).catch(() => null))) throw new HttpError(404, 'Song not found; save it first');
 
   const dir = join(root, 'songs', id, 'stems');
+  const tmp = await receiveFile(dir, req, maxBytes, 'Stem');
+  try {
+    const file = await freeName(dir, name);
+    await rename(tmp.path, join(dir, file));
+    return { file, size: tmp.size };
+  } catch (err) {
+    await unlink(tmp.path).catch(() => {});
+    throw err;
+  }
+}
+
+// Saves a rendered WAV as exports/<song title>.wav, replacing that song's previous export.
+async function saveExport(root, id, req, maxBytes) {
+  const song = await readJson(join(root, 'songs', id, 'song.json'), () => { throw new HttpError(404, 'Song not found'); });
+  const name = sanitizeStemName(`${song.title}.wav`) ?? `${id}.wav`;
+  const dir = join(root, 'exports');
+  const tmp = await receiveFile(dir, req, maxBytes, 'Export');
+  try {
+    const head = await readHead(tmp.path, 12);
+    if (!head.startsWith('RIFF') || head.slice(8, 12) !== 'WAVE') throw new HttpError(400, 'Export must be a WAV file');
+    await rename(tmp.path, join(dir, name));
+    return { file: name, size: tmp.size };
+  } catch (err) {
+    await unlink(tmp.path).catch(() => {});
+    throw err;
+  }
+}
+
+async function readHead(file, bytes) {
+  const handle = await open(file, 'r');
+  try {
+    const { buffer, bytesRead } = await handle.read(Buffer.alloc(bytes), 0, bytes, 0);
+    return buffer.subarray(0, bytesRead).toString('latin1');
+  } finally {
+    await handle.close();
+  }
+}
+
+// Streams the request body to a hidden temp file in `dir`; rejects with 413 above `maxBytes`.
+async function receiveFile(dir, req, maxBytes, what) {
   await mkdir(dir, { recursive: true });
-  const tmp = join(dir, `.upload-${process.pid}-${Date.now()}.part`);
+  const tmp = join(dir, `.upload-${process.pid}-${Date.now()}-${++tmpCounter}.part`);
   let size = 0;
   try {
     await new Promise((resolve, reject) => {
@@ -151,7 +196,7 @@ async function uploadStem(root, id, req, maxBytes) {
           req.unpipe(out);
           out.destroy();
           req.resume();
-          reject(new HttpError(413, `Stem is larger than ${Math.round(maxBytes / 1024 / 1024)} MB`));
+          reject(new HttpError(413, `${what} is larger than ${Math.round(maxBytes / 1024 / 1024)} MB`));
         }
       });
       req.on('error', reject);
@@ -159,9 +204,7 @@ async function uploadStem(root, id, req, maxBytes) {
       out.on('finish', resolve);
       req.pipe(out);
     });
-    const file = await freeName(dir, name);
-    await rename(tmp, join(dir, file));
-    return { file, size };
+    return { path: tmp, size };
   } catch (err) {
     await unlink(tmp).catch(() => {});
     throw err;

@@ -4,6 +4,7 @@ import { createEditor, esc, formatDb } from './editor.js';
 import { createTimeline } from './timeline.js';
 import { Player } from './player.js';
 import { createLiveView } from './live.js';
+import { exportSong } from './export.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -14,6 +15,7 @@ let savedJson = null; // JSON of the song as opened or last saved
 let isNew = false; // never saved
 let sectionStarts = [];
 let uploading = false;
+let exporting = false;
 let view = 'edit';
 
 const catalogRes = await fetch('/samples/catalog.json').catch(() => null);
@@ -61,6 +63,7 @@ async function start() {
   $('view-edit').addEventListener('click', () => setView('edit'));
   $('view-live').addEventListener('click', () => whenSaved(() => setView('live')));
   $('save').addEventListener('click', save);
+  $('export').addEventListener('click', exportWav);
   $('new-song').addEventListener('click', () => whenSaved(() => open(newSong(), false)));
   $('song-list').addEventListener('click', (e) => {
     const id = e.target.closest('[data-id]')?.dataset.id;
@@ -119,6 +122,36 @@ async function start() {
       message: isNew ? 'Save the song first, then add stems.' : uploading ? '' : 'WAV, MP3, M4A, FLAC or OGG.',
     });
     $('save').disabled = uploading;
+    const exportBlocked = isNew || isDirty() || uploading;
+    $('export').disabled = exporting || exportBlocked;
+    $('export').title = exportBlocked
+      ? 'Save the song first; the export uses the saved version.'
+      : 'Save a stereo WAV: click + guide left, stems right';
+  }
+
+  // Renders the saved song to exports/<title>.wav and also downloads it.
+  async function exportWav() {
+    player.stop();
+    exporting = true;
+    updateUploadState();
+    $('play-note').textContent = 'Rendering WAV…';
+    try {
+      const result = await exportSong(song, catalog);
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([result.bytes], { type: 'audio/wav' }));
+      link.download = result.file;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+      $('play-note').textContent = `Exported ${result.file} (${clock(result.seconds)}) to the exports folder.`;
+      showMessages(result.warnings);
+    } catch (err) {
+      $('play-note').textContent = `Export failed: ${err.message}`;
+    } finally {
+      exporting = false;
+      updateUploadState();
+    }
   }
 
   // Uploads one file at a time, then adds the stems to the song (saved with the next Save).
@@ -278,6 +311,11 @@ async function start() {
     const section = sectionStarts.findLast((s) => s.startBar <= pos.bar);
     el.textContent = `Bar ${pos.bar} · beat ${pos.beat}${section ? ` · ${section.name}` : ''}`;
   }
+}
+
+function clock(sec) {
+  const s = Math.round(sec);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 function showMessages(warnings) {
