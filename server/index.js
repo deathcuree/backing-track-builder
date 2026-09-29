@@ -1,11 +1,14 @@
 // Local server: serves the app page, shared modules, imported samples and the JSON API.
-// Binds to 127.0.0.1 only; nothing is reachable from other machines.
+// Binds to 127.0.0.1 only; nothing is reachable from other machines. The code (and the imported
+// samples) come from the project folder; your songs, setlists, settings and exports live in the
+// data folder (see data-dir.js).
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { join, resolve, sep, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handleApi } from './api.js';
+import { defaultDataDir, prepareDataDir } from './data-dir.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DEFAULT_PORT = 4747;
@@ -28,8 +31,9 @@ const MOUNTS = [
   ['/', 'public'],
 ];
 
-export function startServer({ root = PROJECT_ROOT, port = DEFAULT_PORT, maxStemBytes } = {}) {
-  const server = createServer((req, res) => handle(root, req, res, { maxStemBytes }).catch((err) => {
+/** @param {{ root?: string, dataDir?: string, port?: number, maxStemBytes?: number }} options dataDir defaults to root */
+export function startServer({ root = PROJECT_ROOT, dataDir = root, port = DEFAULT_PORT, maxStemBytes } = {}) {
+  const server = createServer((req, res) => handle(root, dataDir, req, res, { maxStemBytes }).catch((err) => {
     console.error(err);
     if (!res.headersSent) send(res, 500, 'Server error');
   }));
@@ -39,8 +43,8 @@ export function startServer({ root = PROJECT_ROOT, port = DEFAULT_PORT, maxStemB
   });
 }
 
-async function handle(root, req, res, apiOptions) {
-  if (req.url.startsWith('/api/')) return handleApi(root, req, res, apiOptions);
+async function handle(root, dataDir, req, res, apiOptions) {
+  if (req.url.startsWith('/api/')) return handleApi(dataDir, req, res, apiOptions);
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed');
 
   let path;
@@ -81,9 +85,17 @@ function send(res, status, text) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || DEFAULT_PORT;
-  startServer({ port }).then(
+  const dataDir = defaultDataDir();
+  prepareDataDir(dataDir, { legacyRoot: PROJECT_ROOT })
+    .then(({ created, copied }) => {
+      if (created) console.log(`Created your data folder: ${dataDir}`);
+      if (copied.length) console.log(`Copied ${copied.join(', ')} from the project folder into it (the originals are untouched).`);
+      return startServer({ port, dataDir });
+    })
+    .then(
     () => {
       console.log(`Backing Track Builder running at http://localhost:${port}`);
+      console.log(`Songs, setlists and exports: ${dataDir}`);
       console.log('Open it in Chrome. Press Ctrl+C to stop.');
     },
     (err) => {

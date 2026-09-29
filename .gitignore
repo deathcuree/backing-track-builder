@@ -2,12 +2,10 @@ node_modules/
 .DS_Store
 samples/*
 !samples/.gitkeep
-# Your songs, setlists and settings stay on this computer (only the empty folders are tracked).
-songs/*
-!songs/.gitkeep
-setlists/*
-!setlists/.gitkeep
+# Your songs, setlists, settings and exports live in ~/Music/Backing Tracks (or BTB_DATA_DIR).
+# Older versions kept them in these project folders; any copies left there stay out of git.
+songs/
+setlists/
 settings.json
-exports/*
-!exports/.gitkeep
+exports/
 /.scratch

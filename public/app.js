@@ -612,7 +612,7 @@ async function start(catalog) {
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
-      setNote(`Exported ${result.file} (${clock(result.seconds)}) to the exports folder.`);
+      setNote(`Exported ${result.file} (${clock(result.seconds)}) to ${result.folder}.`);
       if (result.warnings.length) showStatusMessages(result.warnings);
     } catch (err) {
       setNote(`Export failed: ${err.message}`);
