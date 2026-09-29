@@ -1,10 +1,11 @@
-// Local server: serves the app page, shared modules and imported samples.
+// Local server: serves the app page, shared modules, imported samples and the JSON API.
 // Binds to 127.0.0.1 only; nothing is reachable from other machines.
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { join, resolve, sep, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { handleApi } from './api.js';
 
 const PROJECT_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DEFAULT_PORT = 4747;
@@ -39,6 +40,7 @@ export function startServer({ root = PROJECT_ROOT, port = DEFAULT_PORT } = {}) {
 }
 
 async function handle(root, req, res) {
+  if (req.url.startsWith('/api/')) return handleApi(root, req, res);
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed');
 
   let path;

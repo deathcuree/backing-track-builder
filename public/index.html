@@ -4,14 +4,49 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Backing Track Builder</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main>
+  <section id="setup" class="setup" hidden>
     <h1>Backing Track Builder</h1>
-    <p class="muted">Song editor and live player coming next. Sample library status:</p>
-    <section id="status" aria-live="polite">Loading sample catalog…</section>
-  </main>
+    <p class="warn">No samples imported yet.</p>
+    <p>Run this in the project folder, then reload the page:</p>
+    <pre>npm run import-samples -- "/path/to/Click and Guide Samples"</pre>
+  </section>
+
+  <div id="app" class="app">
+    <header class="topbar">
+      <div class="brand">Backing Track Builder</div>
+      <div class="transport">
+        <button id="play" type="button" class="primary play" aria-pressed="false">▶ Play</button>
+        <div>
+          <div id="position" class="position" aria-live="off">Stopped</div>
+          <div id="play-note" class="muted small" aria-live="polite"></div>
+        </div>
+      </div>
+      <p class="muted small routing-note">Split mode: click &amp; guide play in the <strong>left</strong> channel only.</p>
+    </header>
+
+    <aside class="sidebar">
+      <button id="new-song" type="button">+ New song</button>
+      <h2>Songs</h2>
+      <ul id="song-list" class="song-list"></ul>
+    </aside>
+
+    <main class="main">
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <div class="song-header">
+        <h1 id="song-title">Song</h1>
+        <span id="save-state" class="save-state"></span>
+        <button id="save" type="button" class="primary">Save</button>
+      </div>
+      <section id="timeline" aria-label="Timeline"></section>
+      <section id="messages" class="messages" aria-live="polite" hidden></section>
+      <form id="editor" class="editor" novalidate></form>
+    </main>
+  </div>
+
   <script type="module" src="/app.js"></script>
 </body>
 </html>
