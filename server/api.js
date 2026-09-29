@@ -1,12 +1,12 @@
-// JSON API for songs, stems and settings. Data lives under the project root:
-// songs/<id>/song.json, songs/<id>/stems/<file> and settings.json, so it can be backed up or
-// edited by hand.
+// JSON API for songs, stems, setlists and settings. Data lives under the project root:
+// songs/<id>/song.json, songs/<id>/stems/<file>, setlists/<id>.json and settings.json, so it can
+// be backed up or edited by hand.
 import { readFile, writeFile, rename, mkdir, readdir, stat, unlink } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { join, extname } from 'node:path';
-import { validateSong, sanitizeStemName, LIMITS } from '../shared/song.js';
+import { validateSong, sanitizeStemName, LIMITS, ID_RE } from '../shared/song.js';
+import { validateSetlist } from '../shared/setlist.js';
 
-const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const MAX_BODY = 1024 * 1024;
 const DEFAULT_MAX_STEM_BYTES = 1024 * 1024 * 1024; // 1 GB; long 24-bit/96 kHz stems are big
 const DEFAULT_SETTINGS = { version: 1, routing: { mode: 'split' }, mix: { inEarStemsDb: 0, mainStemsDb: 0 } };
@@ -89,6 +89,27 @@ async function route(root, req, parts, options) {
       });
       createReadStream(file).pipe(res);
     };
+  }
+  if (resource === 'setlists' && parts.length === 1) {
+    allow(req, ['GET']);
+    return listSetlists(root);
+  }
+  if (resource === 'setlists' && parts.length === 2) {
+    checkId(id);
+    const file = join(root, 'setlists', `${id}.json`);
+    allow(req, ['GET', 'PUT', 'DELETE']);
+    const notFound = () => { throw new HttpError(404, 'Setlist not found'); };
+    if (req.method === 'GET') return readJson(file, notFound);
+    if (req.method === 'DELETE') {
+      await unlink(file).catch((err) => (err.code === 'ENOENT' ? notFound() : Promise.reject(err)));
+      return { deleted: id };
+    }
+    const setlist = await readBody(req);
+    if (setlist?.id !== id) throw new HttpError(400, 'Setlist id does not match the URL');
+    const errors = validateSetlist(setlist);
+    if (errors.length) throw new HttpError(400, 'Setlist is not valid', { errors });
+    await writeJson(file, setlist);
+    return setlist;
   }
   if (resource === 'settings' && parts.length === 1) {
     const file = join(root, 'settings.json');
@@ -183,6 +204,19 @@ function withDefaults(settings) {
     routing: { ...DEFAULT_SETTINGS.routing, ...s.routing },
     mix: { ...DEFAULT_SETTINGS.mix, ...s.mix },
   };
+}
+
+async function listSetlists(root) {
+  const dir = join(root, 'setlists');
+  const files = await readdir(dir).catch(() => []);
+  const setlists = [];
+  for (const f of files) {
+    const id = f.replace(/\.json$/, '');
+    if (id === f || !ID_RE.test(id)) continue;
+    const s = await readJson(join(dir, f), () => null).catch(() => null);
+    if (s) setlists.push({ id: s.id, name: s.name, count: s.songs?.length ?? 0 });
+  }
+  return setlists.sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
 async function listSongs(root) {

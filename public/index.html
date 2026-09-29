@@ -18,6 +18,10 @@
   <div id="app" class="app">
     <header class="topbar">
       <div class="brand">Backing Track Builder</div>
+      <div class="views" role="group" aria-label="View">
+        <button id="view-edit" type="button" aria-pressed="true">Edit</button>
+        <button id="view-live" type="button" aria-pressed="false">Live</button>
+      </div>
       <div class="transport">
         <button id="play" type="button" class="primary play" aria-pressed="false">▶ Play</button>
         <div>
@@ -28,7 +32,7 @@
       <p class="muted small routing-note">Split mode: left = in-ears (click, guide, stems) · right = main (stems only).</p>
     </header>
 
-    <aside class="sidebar">
+    <aside id="edit-side" class="sidebar">
       <button id="new-song" type="button">+ New song</button>
       <h2>Songs</h2>
       <ul id="song-list" class="song-list"></ul>
@@ -45,7 +49,7 @@
       </div>
     </aside>
 
-    <main class="main">
+    <main id="edit-main" class="main">
       <div id="notice" class="notice" role="alert" hidden></div>
       <div class="song-header">
         <h1 id="song-title">Song</h1>
@@ -55,6 +59,15 @@
       <section id="timeline" aria-label="Timeline"></section>
       <section id="messages" class="messages" aria-live="polite" hidden></section>
       <form id="editor" class="editor" novalidate></form>
+    </main>
+
+    <aside id="live-side" class="sidebar" hidden>
+      <div id="live-setlist-picker" class="live-picker"></div>
+      <div id="live-setlist"></div>
+    </aside>
+    <main id="live-main" class="main" hidden>
+      <div id="live-show" class="live-show"></div>
+      <section id="live-messages" class="messages" aria-live="polite" hidden></section>
     </main>
   </div>
 

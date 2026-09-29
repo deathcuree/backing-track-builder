@@ -3,6 +3,7 @@ import { buildSchedule } from '/shared/schedule.js';
 import { createEditor, esc, formatDb } from './editor.js';
 import { createTimeline } from './timeline.js';
 import { Player } from './player.js';
+import { createLiveView } from './live.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -13,6 +14,7 @@ let savedJson = null; // JSON of the song as opened or last saved
 let isNew = false; // never saved
 let sectionStarts = [];
 let uploading = false;
+let view = 'edit';
 
 const catalogRes = await fetch('/samples/catalog.json').catch(() => null);
 if (!catalogRes?.ok) {
@@ -28,6 +30,10 @@ async function start() {
   const timeline = createTimeline($('timeline'), { onBarClick: (bar) => editor.addCue(bar) });
   const player = new Player({
     onPosition: (pos) => {
+      if (view === 'live') {
+        $('position').textContent = !pos ? 'Stopped' : pos.countIn ? `Count-in · beat ${pos.beat}` : `Bar ${pos.bar} · beat ${pos.beat}`;
+        return live.setPosition(pos);
+      }
       timeline.setPosition(pos);
       showPosition(pos);
     },
@@ -35,7 +41,12 @@ async function start() {
       $('play').textContent = playing ? '■ Stop' : '▶ Play';
       $('play').setAttribute('aria-pressed', String(playing));
       if (!playing) $('play-note').textContent = '';
+      if (view === 'live') live.setPlaying(playing);
     },
+  });
+  const live = createLiveView({
+    side: $('live-side'), main: $('live-show'), player, catalog, api,
+    getSongs: () => songs, showMessages,
   });
 
   const settings = await api('GET', '/api/settings');
@@ -47,16 +58,24 @@ async function start() {
   open(songs[0] ? await api('GET', `/api/songs/${songs[0].id}`) : newSong(), songs[0] ? true : false);
 
   $('play').addEventListener('click', togglePlay);
+  $('view-edit').addEventListener('click', () => setView('edit'));
+  $('view-live').addEventListener('click', () => whenSaved(() => setView('live')));
   $('save').addEventListener('click', save);
   $('new-song').addEventListener('click', () => whenSaved(() => open(newSong(), false)));
   $('song-list').addEventListener('click', (e) => {
     const id = e.target.closest('[data-id]')?.dataset.id;
     if (id && id !== song.id) whenSaved(async () => open(await api('GET', `/api/songs/${id}`), true));
   });
+  // Space play/stop · 1–9 jump to section · L loop · ←/→ previous/next song (live view, stopped)
   document.addEventListener('keydown', (e) => {
-    if (e.code !== 'Space' || e.target.closest('input, select, textarea, button')) return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, select, textarea')) return;
+    const digit = e.code.match(/^(?:Digit|Numpad)([1-9])$/);
+    if (e.code === 'Space' && !e.target.closest('button')) togglePlay();
+    else if (digit) player.jump(Number(digit[1]) - 1);
+    else if (e.code === 'KeyL') player.toggleLoop();
+    else if (view === 'live' && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) live.step(e.code === 'ArrowLeft' ? -1 : 1);
+    else return;
     e.preventDefault();
-    togglePlay();
   });
   window.addEventListener('beforeunload', (e) => {
     if (isDirty()) e.preventDefault();
@@ -151,7 +170,26 @@ async function start() {
     }
   }
 
+  async function setView(next) {
+    if (next === view) return;
+    player.stop();
+    view = next;
+    $('view-edit').setAttribute('aria-pressed', String(view === 'edit'));
+    $('view-live').setAttribute('aria-pressed', String(view === 'live'));
+    for (const id of ['edit-side', 'edit-main']) $(id).hidden = view !== 'edit';
+    for (const id of ['live-side', 'live-main']) $(id).hidden = view !== 'live';
+    $('position').textContent = 'Stopped';
+    if (view === 'live') {
+      songs = await api('GET', '/api/songs');
+      showMessages([]);
+      await live.enter();
+    } else {
+      changed();
+    }
+  }
+
   async function togglePlay() {
+    if (view === 'live') return live.togglePlay();
     if (player.playing) return player.stop();
     const errors = validateSong(song);
     if (errors.length) {
@@ -243,7 +281,7 @@ async function start() {
 }
 
 function showMessages(warnings) {
-  const el = $('messages');
+  const el = $(view === 'live' ? 'live-messages' : 'messages');
   el.hidden = warnings.length === 0;
   el.innerHTML = `<h2>Heads up</h2><ul>${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>`;
 }

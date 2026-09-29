@@ -59,3 +59,33 @@ Setup: a saved song with the right BPM and sections for a MultiTracks song, head
   - UI: stem button disabled until the song is saved; upload via the button; unsupported file named in
     a message; volume/mute saved; unused uploaded copies removed on Save; output mix persists.
   - Not yet done: steps 2–5 and 7 by ear / Task Manager on the user's laptop with real MultiTracks stems.
+
+## BTB-06: Live player (setlist, jump, loop)
+
+Setup: three saved songs (at least one with stems), headphones on. Click **Live** in the top bar.
+
+1. **Setlist.** "+ New", rename it, add the three songs, reorder with ↑/↓. Stop and restart the
+   server (`npm start`), reload, click Live: the setlist is still there and selected.
+2. **Songs.** ◀ Prev / Next ▶ (or ←/→) change the song only while stopped; the song and its stems
+   load right away ("loading stems…").
+3. **Jump.** Play. In the middle of a verse press **3** (or click a section button): the button gets
+   a dashed outline, the status says "Jumping to …", and at the next bar line the band tracks and
+   click continue from that section with no gap or double click. Pressed early in a bar you also
+   hear the section's name on the next beat. Press the same number again before the bar ends to cancel.
+4. **Loop.** Press **L** during a section: it repeats (tracks too) until you press L again, then the
+   song carries on. Leave it looping for a few minutes and listen for drift between click and tracks.
+5. **Live mute.** Mute a stem and move a fader while playing: heard immediately, "Live changes not
+   saved" appears. "Save mix" keeps it; switching songs without saving throws it away.
+6. **Rehearsal.** Run the whole setlist top to bottom with count-in, one jump, one loop, one mute.
+
+### Results
+- 2026-09-29 (automated, headless Brave via DevTools protocol, isolated data folder; test stems whose
+  burst pitch encodes the bar number; the player's real output recorded with an AudioWorklet tap):
+  - AC 6: jump requested mid-bar 2 → at the next downbeat (6.000 s) the stem plays bar 13 (1600 Hz);
+    click intervals 499.2–500.7 ms throughout (no gap/double hit); stem vs click at the seam 1.0 ms.
+  - Announce: jump at ¼ of the bar → "Chorus" spoken at 5.009 s (next beat).
+  - AC 7: Intro looped for 20 s at 240 BPM: stem bars 1,2,3,4 ×4, then 5,6,7,8 after release; click grid
+    drift −0.1 ms over 81 clicks; stem vs click −0.02 to 1.45 ms at every seam.
+  - UI: setlist create/rename/add, ←/→ only while stopped, key 3 → pending → Chorus at bar 13, L → looping,
+    live mute → "Save mix" saved to the song, setlist survives server restart, no console/server errors.
+  - Not yet done: minutes-long loop by ear and the full rehearsal (steps 4 and 6) on the user's laptop.

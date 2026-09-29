@@ -2,6 +2,8 @@
 // (refuses to save invalid songs). Fallback problems such as missing samples are not errors here;
 // buildSchedule reports those as warnings and the song still saves.
 
+/** Song and setlist ids: lowercase letters, digits and dashes (see slugify). */
+export const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const LANGUAGES = ['en', 'fr', 'pt', 'es'];
 export const SUBDIVISIONS = ['quarter', 'eighth', 'sixteenth'];
 export const STEM_EXTENSIONS = ['wav', 'mp3', 'm4a', 'flac', 'ogg']; // formats Chrome can decode
