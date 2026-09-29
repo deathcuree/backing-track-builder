@@ -1,17 +1,19 @@
 // Song editor form. Edits the song object in place and reports every change; the app validates,
 // updates the timeline and tracks unsaved changes. Structural changes (adding, moving, removing
 // rows) re-render the form; typing into a field does not, so focus is never lost.
-import { LANGUAGES, SUBDIVISIONS, LIMITS } from '/shared/song.js';
+import { LANGUAGES, SUBDIVISIONS, LIMITS, STEM_EXTENSIONS } from '/shared/song.js';
 
 export const LANGUAGE_NAMES = { en: 'English', fr: 'French', pt: 'Portuguese', es: 'Spanish' };
 const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true });
 
 /**
  * @param {HTMLFormElement} form
- * @param {{ catalog: object, onChange: () => void }} options
+ * @param {{ catalog: object, onChange: (path?: string) => void, onAddStems: (files: File[]) => void }} options
+ *   onChange receives the edited field's path (e.g. "stems.0.volumeDb") so live levels can follow.
  */
-export function createEditor(form, { catalog, onChange }) {
+export function createEditor(form, { catalog, onChange, onAddStems }) {
   let song = null;
+  let upload = { enabled: false, message: '' };
 
   form.addEventListener('submit', (e) => e.preventDefault());
 
@@ -23,7 +25,14 @@ export function createEditor(form, { catalog, onChange }) {
     if (out) out.value = formatDb(Number(input.value));
     // Changing the language changes which section and cue names exist.
     if (input.dataset.path === 'guide.language') render();
-    onChange();
+    onChange(input.dataset.path);
+  });
+
+  form.addEventListener('change', (event) => {
+    if (!event.target.matches('input[type="file"]')) return;
+    const files = [...event.target.files];
+    event.target.value = '';
+    if (files.length) onAddStems(files);
   });
 
   form.addEventListener('click', (event) => {
@@ -38,6 +47,8 @@ export function createEditor(form, { catalog, onChange }) {
       case 'remove-section': sections.splice(i, 1); break;
       case 'add-cue': cues.push({ name: defaultCue(), bar: 1 }); break;
       case 'remove-cue': cues.splice(i, 1); break;
+      case 'remove-stem': song.stems.splice(i, 1); break;
+      case 'add-stems': form.querySelector('#f-stem-files').click(); return;
       default: return;
     }
     render();
@@ -57,6 +68,22 @@ export function createEditor(form, { catalog, onChange }) {
       onChange();
       const index = song.cues.findLastIndex((c) => c.bar === bar);
       form.querySelector(`[data-path="cues.${index}.name"]`)?.focus();
+    },
+    /** Adds uploaded stems ({ file }) with default levels. */
+    addStems(uploaded) {
+      for (const { file } of uploaded) {
+        song.stems.push({ file, name: file.replace(/\.[^.]+$/, ''), volumeDb: 0, muted: false });
+      }
+      render();
+      onChange('stems');
+    },
+    /** @param {{ enabled: boolean, message: string }} state whether stems can be uploaded now, and why not */
+    setUpload(state) {
+      upload = state;
+      const button = form.querySelector('[data-action="add-stems"]');
+      if (button) button.disabled = !upload.enabled;
+      const note = form.querySelector('#stem-upload-note');
+      if (note) note.textContent = upload.message;
     },
     /** @param {{ path: string, message: string }[]} errors from validateSong */
     showErrors(errors) {
@@ -177,6 +204,39 @@ export function createEditor(form, { catalog, onChange }) {
             </li>`).join('')}
         </ul>
         <button type="button" data-action="add-cue">+ Add cue</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>Stems</legend>
+        <p class="muted hint">Band tracks from MultiTracks. They start with bar 1 and play to both the in-ears and the main output. Volume and mute change live while playing.</p>
+        <p class="error" data-error-for="stems"></p>
+        <ul class="rows">
+          ${song.stems.map((st, i) => `
+            <li class="row stem-row">
+              <input data-path="stems.${i}.name" type="text" value="${esc(st.name)}" aria-label="Stem ${i + 1} name" class="stem-name">
+              <span class="volume">
+                <input id="f-stem-vol-${i}" data-path="stems.${i}.volumeDb" data-type="number" type="range" min="${LIMITS.volumeDb[0]}" max="${LIMITS.volumeDb[1]}" step="1" value="${esc(st.volumeDb)}" aria-label="${esc(st.name)} volume">
+                <output for="f-stem-vol-${i}">${formatDb(st.volumeDb)}</output>
+              </span>
+              <label class="inline mute"><input data-path="stems.${i}.muted" data-type="checkbox" type="checkbox" ${st.muted ? 'checked' : ''}> Mute</label>
+              <span class="row-actions">
+                <button type="button" data-action="remove-stem" data-index="${i}" aria-label="Remove stem ${esc(st.name)}">✕</button>
+              </span>
+              <span class="muted small stem-file">${esc(st.file)}</span>
+              <span class="error" data-error-for="stems.${i}.name"></span>
+              <span class="error" data-error-for="stems.${i}.volumeDb"></span>
+              <span class="error" data-error-for="stems.${i}.file"></span>
+            </li>`).join('')}
+        </ul>
+        <div class="stem-actions">
+          <button type="button" data-action="add-stems" ${upload.enabled ? '' : 'disabled'}>+ Add stems…</button>
+          <input id="f-stem-files" type="file" multiple hidden accept="${STEM_EXTENSIONS.map((e) => `.${e}`).join(',')}">
+          <span id="stem-upload-note" class="muted small" aria-live="polite">${esc(upload.message)}</span>
+        </div>
+        <div class="grid offset-grid">
+          ${field('Stem offset (ms)', `<input id="f-offset" data-path="stemOffsetMs" data-type="number" type="number" min="${LIMITS.stemOffsetMs[0]}" max="${LIMITS.stemOffsetMs[1]}" step="1" value="${esc(song.stemOffsetMs)}">`, 'stemOffsetMs')}
+          <p class="muted hint offset-hint">Nudges stems against the click. Positive = stems later. Applies the next time you press Play.</p>
+        </div>
       </fieldset>`;
     updateBarRanges();
   }
@@ -226,6 +286,7 @@ function range(from, to) {
 }
 
 function readValue(input) {
+  if (input.dataset.type === 'checkbox') return input.checked;
   if (input.dataset.type !== 'number') return input.value;
   return input.value === '' ? NaN : Number(input.value);
 }

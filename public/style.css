@@ -272,6 +272,15 @@ ol.rows .row::before {
 .form-error:empty { display: none; }
 .form-error { color: var(--warn); margin: 0; }
 .hint { margin: 0 0 10px; font-size: 0.82rem; }
+.stem-row .stem-name { flex: 1 1 160px; }
+.stem-row .volume { flex: 1 1 200px; }
+.stem-row .stem-file { flex-basis: 100%; }
+.stem-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.offset-grid { align-items: end; }
+.offset-hint { margin: 0; grid-column: span 2; }
+@media (max-width: 800px) { .offset-hint { grid-column: auto; } }
+.mix { display: grid; gap: 10px; }
+.mix .field label { font-size: 0.82rem; }
 
 @media (max-width: 800px) {
   .app {

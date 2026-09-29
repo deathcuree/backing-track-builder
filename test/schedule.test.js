@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  buildSchedule, secAtBar, barAt, initialPlayState, nextPosition, barEvents,
+  buildSchedule, secAtBar, barAt, initialPlayState, nextPosition, barEvents, stemStart,
 } from '../shared/schedule.js';
 
 const catalog = {
@@ -300,3 +300,18 @@ function deepFreeze(o) {
   Object.values(o).forEach((v) => typeof v === 'object' && v && deepFreeze(v));
   return Object.freeze(o);
 }
+
+describe('stemStart (where a stem file is when song time `songSec` plays)', () => {
+  test('from the start of a 1-bar count-in at 120 BPM (song time -2 s)', () => {
+    assert.deepEqual(stemStart(-2, 0), { delaySec: 2, fileOffsetSec: 0 });
+    assert.deepEqual(stemStart(-2, 100), { delaySec: 2.1, fileOffsetSec: 0 });
+    assert.deepEqual(stemStart(-2, -500), { delaySec: 1.5, fileOffsetSec: 0 });
+    assert.deepEqual(stemStart(-2, -2000), { delaySec: 0, fileOffsetSec: 0 });
+  });
+
+  test('mid-song (e.g. after a jump to bar 5 = 8 s)', () => {
+    assert.deepEqual(stemStart(8, 0), { delaySec: 0, fileOffsetSec: 8 });
+    assert.deepEqual(stemStart(8, 100), { delaySec: 0, fileOffsetSec: 7.9 });
+    assert.deepEqual(stemStart(8, -250), { delaySec: 0, fileOffsetSec: 8.25 });
+  });
+});

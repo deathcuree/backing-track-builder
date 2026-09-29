@@ -4,6 +4,7 @@
 
 export const LANGUAGES = ['en', 'fr', 'pt', 'es'];
 export const SUBDIVISIONS = ['quarter', 'eighth', 'sixteenth'];
+export const STEM_EXTENSIONS = ['wav', 'mp3', 'm4a', 'flac', 'ogg']; // formats Chrome can decode
 export const LIMITS = {
   bpm: [40, 240],
   beats: [2, 7],
@@ -79,7 +80,20 @@ export function validateSong(song) {
     });
   }
 
-  if (!Array.isArray(song.stems)) fail('stems', 'Stems must be a list.');
+  if (!Array.isArray(song.stems)) {
+    fail('stems', 'Stems must be a list.');
+  } else {
+    const files = new Set();
+    song.stems.forEach((st, i) => {
+      if (typeof st?.file !== 'string' || sanitizeStemName(st.file) !== st.file || files.has(st.file)) {
+        fail(`stems[${i}].file`, 'Stem file name is not valid or is used twice.');
+      }
+      files.add(st?.file);
+      if (typeof st?.name !== 'string' || !st.name.trim()) fail(`stems[${i}].name`, 'Give the stem a name.');
+      checkVolume(st?.volumeDb, `stems[${i}].volumeDb`, fail);
+      if (typeof st?.muted !== 'boolean') fail(`stems[${i}].muted`, 'Mute must be on or off.');
+    });
+  }
   if (!inRange(song.stemOffsetMs, LIMITS.stemOffsetMs)) {
     fail('stemOffsetMs', `Stem offset must be between ${LIMITS.stemOffsetMs[0]} and ${LIMITS.stemOffsetMs[1]} ms.`);
   }
@@ -105,6 +119,24 @@ export function uniqueId(title, existingIds) {
   let n = 2;
   while (taken.has(`${base}-${n}`)) n++;
   return `${base}-${n}`;
+}
+
+/**
+ * Makes an uploaded file name safe to store: no folders, plain characters, supported audio type.
+ * "Guitarra Eléctrica #1.flac" -> "Guitarra Electrica _1.flac"; returns null if unusable.
+ */
+export function sanitizeStemName(fileName) {
+  const base = String(fileName).split(/[\\/]/).pop();
+  const m = base.match(/^(.*)\.([A-Za-z0-9]+)$/);
+  if (!m || !STEM_EXTENSIONS.includes(m[2].toLowerCase())) return null;
+  const name = m[1]
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9 ._()-]/g, '_')
+    .replace(/\s+/g, ' ')
+    .replace(/^[^A-Za-z0-9]+/, '')
+    .slice(0, 90)
+    .replace(/[ .]+$/, '');
+  return name ? `${name}.${m[2]}` : null;
 }
 
 function inRange(value, [min, max]) {

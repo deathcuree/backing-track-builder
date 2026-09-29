@@ -25,13 +25,24 @@
           <div id="play-note" class="muted small" aria-live="polite"></div>
         </div>
       </div>
-      <p class="muted small routing-note">Split mode: click &amp; guide play in the <strong>left</strong> channel only.</p>
+      <p class="muted small routing-note">Split mode: left = in-ears (click, guide, stems) · right = main (stems only).</p>
     </header>
 
     <aside class="sidebar">
       <button id="new-song" type="button">+ New song</button>
       <h2>Songs</h2>
       <ul id="song-list" class="song-list"></ul>
+      <h2>Output mix</h2>
+      <div id="mix" class="mix">
+        <div class="field">
+          <label for="mix-inear">Stems in the in-ears</label>
+          <span class="volume"><input id="mix-inear" data-mix="inEarStemsDb" type="range" min="-60" max="6" step="1" value="0"><output for="mix-inear">0 dB</output></span>
+        </div>
+        <div class="field">
+          <label for="mix-main">Stems to main (audience)</label>
+          <span class="volume"><input id="mix-main" data-mix="mainStemsDb" type="range" min="-60" max="6" step="1" value="0"><output for="mix-main">0 dB</output></span>
+        </div>
+      </div>
     </aside>
 
     <main class="main">
