@@ -30,7 +30,7 @@ async function start(catalog) {
   let isNew = false; // never saved
   let songs = [];
   let selection = null; // { kind: 'track'|'cue'|'locator'|'tempo'|'meter', ref } or null (the song)
-  let startBar = 1;
+  let cursor = [1, 1, 1]; // insert marker [bar, beat, sixteenth]: where new things go and Play starts
   let grid = null; // last grid that could be built (kept while tempo/meter fields are being fixed)
   let errors = [];
   let warnings = [];
@@ -72,15 +72,15 @@ async function start(catalog) {
     },
     onNewSong: () => whenSaved(() => open(newSong(), false)),
     onAddCue: ({ type, key }) => {
-      const clip = { at: [startBar, 1, 1], type, key };
+      const clip = { at: [...cursor], type, key };
       cuesTrack().clips.push(clip);
       select({ kind: 'cue', ref: clip });
     },
   });
   const arrangement = createArrangement($('arrangement'), {
     onSelect: select,
-    onStartBar: (bar) => {
-      startBar = bar;
+    onCursor: (at) => {
+      cursor = at;
       render();
     },
     onTrackChange: (track) => {
@@ -142,7 +142,7 @@ async function start(catalog) {
     savedJson = JSON.stringify(song);
     isNew = !saved;
     selection = null;
-    startBar = 1;
+    cursor = [1, 1, 1];
     grid = null;
     extraMessages = [];
     setNote('');
@@ -164,7 +164,7 @@ async function start(catalog) {
       // keep drawing the last good grid while a tempo or meter field is being fixed
     }
     grid ??= buildGrid(newSong());
-    startBar = Math.min(startBar, grid.bars.length);
+    cursor = clampCursor(cursor);
     warnings = errors.length ? [] : buildSchedule(song, catalog).warnings;
     if (structural) detail.show(song, selection);
     detail.showErrors(errors);
@@ -175,7 +175,7 @@ async function start(catalog) {
   }
 
   function render() {
-    arrangement.render({ song, grid, selection, invalid: invalidItems(), startBar, mix: settings.mix });
+    arrangement.render({ song, grid, selection, invalid: invalidItems(), cursor, mix: settings.mix });
     controlbar.render(song);
     if (!player.playing) showPosition(null);
     const dirty = isNew || isDirty();
@@ -208,8 +208,16 @@ async function start(catalog) {
     return song.tracks.find((t) => t.type === 'cues');
   }
 
-  // Adds a locator or marker at the start bar, or selects the one already there.
+  // The insert marker kept inside the song after the end bar or a time signature changed.
+  function clampCursor([bar, beat, sixteenth]) {
+    if (bar > grid.bars.length) return [grid.bars.length, 1, 1];
+    const b = grid.bars[bar - 1];
+    return beat > b.beats || sixteenth > 16 / b.unit ? [bar, 1, 1] : [bar, beat, sixteenth];
+  }
+
+  // Adds a locator or marker at the insert marker's bar, or selects the one already there.
   function addAtStartBar(kind) {
+    const startBar = cursor[0];
     const list = kind === 'locator' ? song.locators : song[kind];
     let item = list.find((m) => m.bar === startBar);
     if (!item) {
@@ -347,7 +355,8 @@ async function start(catalog) {
       warnings = loadWarnings;
       setNote('');
       renderStatus();
-      await player.play({ fromBar: startBar });
+      const bar = grid.bars[cursor[0] - 1];
+      await player.play({ fromBar: cursor[0], offsetSec: grid.secAt(cursor) - bar.startSec });
     } catch (err) {
       setNote(`Could not start playback: ${err.message}`);
     }
@@ -431,8 +440,8 @@ async function start(catalog) {
 
   function showPosition(pos) {
     if (pos) return controlbar.setPosition(pos, pos.songSec);
-    const bar = grid.bars[startBar - 1];
-    controlbar.setPosition({ bar: startBar, beat: 1, sixteenth: 1 }, bar.startSec);
+    const [bar, beat, sixteenth] = cursor;
+    controlbar.setPosition({ bar, beat, sixteenth }, grid.secAt(cursor));
     arrangement.setPlayhead(null);
   }
 

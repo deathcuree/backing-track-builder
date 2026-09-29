@@ -17,7 +17,7 @@ export function createBrowser(el, { catalog, onOpenSong, onNewSong, onAddCue }) 
     </section>
     <section class="br-section br-cues">
       <div class="br-head"><h2>Cues</h2><span class="muted small" id="br-language"></span></div>
-      <p class="muted small br-hint">Click to add at the start bar.</p>
+      <p class="muted small br-hint">Click a cue to add it at the insert marker.</p>
       <div id="br-cue-groups"></div>
     </section>`;
   let language = null;
@@ -50,7 +50,7 @@ export function createBrowser(el, { catalog, onOpenSong, onNewSong, onAddCue }) 
           <ul class="br-list">
             ${cueChoices(catalog, lang, type).map(({ key, english }) => `
               <li><button type="button" class="br-cue" data-cue-type="${type}" data-cue-key="${esc(key)}"
-                title="Add “${esc(key)}” at the start bar${english ? ' (English recording)' : ''}">
+                title="Add “${esc(key)}” at the insert marker${english ? ' (English recording)' : ''}">
                 ${esc(key)}${english ? ' <span class="br-tag">EN</span>' : ''}
               </button></li>`).join('') || '<li class="muted small br-empty">None in this language.</li>'}
           </ul>

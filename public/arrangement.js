@@ -6,7 +6,11 @@
 // meter changes show as wider or narrower bars. Rulers, grid lines and waveforms are drawn on
 // canvases that cover only the visible part (a song can be thousands of screens wide when zoomed
 // in); clips, cues, locators and markers are elements so they can be clicked.
+//
+// Clicking anywhere in the lanes or the bar ruler places the insert marker (snapped to the grid for
+// the zoom; Cmd/Ctrl for sixteenths): new cues, locators and markers go there and Play starts there.
 import { OUTPUTS, LIMITS } from '/shared/song.js';
+import { autoStep } from '/shared/grid.js';
 import { peakRange } from '/shared/waveform.js';
 import { esc, options, formatDb, clock, TRACK_COLORS, OUTPUT_NAMES } from './ui.js';
 
@@ -21,7 +25,7 @@ const STRIPS = [['locator', 'Locators'], ['tempo', 'Tempo'], ['meter', 'Time sig
 /**
  * @param {HTMLElement} el
  * @param {{ onSelect: (sel: { kind: string, ref: object } | null) => void,
- *           onStartBar: (bar: number) => void, onTrackChange: (track: object) => void,
+ *           onCursor: (at: [number, number, number]) => void, onTrackChange: (track: object) => void,
  *           onMasterChange: (key: 'inEarsDb'|'mainDb', db: number) => void,
  *           onAdd: (kind: 'locator'|'tempo'|'meter') => void,
  *           getPeaks: (track: object) => { peaks: object, sampleRate: number, duration: number } | null }} handlers
@@ -32,15 +36,15 @@ export function createArrangement(el, handlers) {
       <div class="arr-inner">
         <div class="arr-head">
           <div class="arr-row ruler-row">
-            <div class="lane" data-ruler="bars"><canvas data-draw="bars"></canvas><div class="start-marker" title="Start bar"></div></div>
-            <div class="hdr hdr-strip"><span class="hdr-title">Bar</span><span class="muted small">Click to set the start</span></div>
+            <div class="lane" data-ruler="bars"><canvas data-draw="bars"></canvas><div class="start-marker" title="Insert marker"></div></div>
+            <div class="hdr hdr-strip"><span class="hdr-title">Bar</span><span class="muted small">Click anywhere: insert marker</span></div>
           </div>
           ${STRIPS.map(([kind, label]) => `
             <div class="arr-row strip-row" data-strip="${kind}">
               <div class="lane" data-lane="${kind}"><canvas data-draw="strip"></canvas><div class="items"></div></div>
               <div class="hdr hdr-strip">
                 <span class="hdr-title">${label}</span>
-                <button type="button" data-add="${kind}" title="Add a ${label.toLowerCase().replace('.', '')} ${kind === 'locator' ? '' : 'marker '}at the start bar">+</button>
+                <button type="button" data-add="${kind}" title="Add a ${label.toLowerCase().replace('.', '')} ${kind === 'locator' ? '' : 'marker '}at the insert marker's bar">+</button>
               </div>
             </div>`).join('')}
         </div>
@@ -55,6 +59,7 @@ export function createArrangement(el, handlers) {
             ${masterHeader('mainDb', 'Main', 'Right channel: the audience')}
           </div>
         </div>
+        <div class="insert-marker"></div>
         <div class="playhead" hidden></div>
       </div>
     </div>`;
@@ -64,6 +69,7 @@ export function createArrangement(el, handlers) {
   const tracksEl = el.querySelector('.arr-tracks');
   const playhead = el.querySelector('.playhead');
   const startMarker = el.querySelector('.start-marker');
+  const insertMarker = el.querySelector('.insert-marker');
   let pps = 40;
   let view = null; // last render input
   let trackSignature = '';
@@ -84,7 +90,13 @@ export function createArrangement(el, handlers) {
     const add = e.target.closest('[data-add]');
     if (add) return handlers.onAdd(add.dataset.add);
     const ruler = e.target.closest('[data-ruler="bars"]');
-    if (ruler && view) return handlers.onStartBar(view.grid.positionAt(laneX(e, ruler) / pps).bar);
+    if (ruler && view) return handlers.onCursor(cursorAt(e, ruler));
+    // A click on a lane (not on a cue, locator or marker) also places the insert marker.
+    const lane = e.target.closest('.lane');
+    if (lane && view && !e.target.closest('.cue, .loc, .mk')) {
+      const at = cursorAt(e, lane);
+      if (at) handlers.onCursor(at);
+    }
     const item = e.target.closest('[data-kind]');
     if (item) {
       const ref = item.dataset.kind === 'track' ? trackById(item.dataset.track) : refs[item.dataset.kind]?.[item.dataset.i];
@@ -125,7 +137,7 @@ export function createArrangement(el, handlers) {
   return {
     /**
      * @param {{ song: object, grid: object, selection: { kind: string, ref: object } | null,
-     *           invalid: Set<object>, startBar: number, mix: { inEarsDb: number, mainDb: number } }} next
+     *           invalid: Set<object>, cursor: [number, number, number], mix: { inEarsDb: number, mainDb: number } }} next
      */
     render(next) {
       view = next;
@@ -192,9 +204,21 @@ export function createArrangement(el, handlers) {
       if (document.activeElement !== input) input.value = db;
       input.nextElementSibling.value = formatDb(db);
     }
-    startMarker.style.left = `${grid.bars[Math.min(view.startBar, grid.bars.length) - 1].startSec * pps}px`;
+    const cursorX = `${grid.secAt(view.cursor) * pps}px`;
+    startMarker.style.left = cursorX;
+    insertMarker.style.left = cursorX;
+    insertMarker.title = `Insert marker ${view.cursor.join('.')}`;
     placePlayhead();
     redraw();
+  }
+
+  // Snapped grid position under the pointer (null past the song end).
+  function cursorAt(event, lane) {
+    const sec = laneX(event, lane) / pps;
+    if (sec >= view.grid.endSec) return null;
+    const bar = view.grid.bars[view.grid.positionAt(sec).bar - 1];
+    const step = event.metaKey || event.ctrlKey ? 1 : autoStep((bar.sec * pps) / (bar.beats * (16 / bar.unit)));
+    return view.grid.snap(sec, step);
   }
 
   function trackById(id) {

@@ -207,6 +207,12 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .invalid { outline: 2px solid var(--warn); outline-offset: 0; }
 .selected.invalid { outline-style: double; outline-width: 3px; }
 
+.insert-marker {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 1px; margin-left: 0;
+  background: var(--fg); pointer-events: none; z-index: 1;
+  animation: insert-blink 1s steps(2, start) infinite;
+}
+@keyframes insert-blink { to { visibility: hidden; } }
 .playhead {
   position: absolute; top: 0; bottom: 0; left: 0; width: 1px;
   background: var(--playhead); pointer-events: none; z-index: 1;

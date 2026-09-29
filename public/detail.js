@@ -86,7 +86,7 @@ export function createDetail(el, { catalog, onChange, onDelete }) {
       return heading('Song', '') + row(
         field('Title', `<input id="d-title" data-path="title" type="text" maxlength="100" value="${esc(song.title)}">`, 'title', 'wide'),
         field('End bar', `<input id="d-end" data-path="endBar" data-type="number" type="number" min="1" max="${LIMITS.endBar[1]}" step="1" value="${esc(song.endBar)}">`, 'endBar'),
-      ) + '<p class="muted small">Select a track, cue, locator or marker to edit it. Click the bar ruler to choose where new things are added and where Play starts.</p>';
+      ) + '<p class="muted small">Select a track, cue, locator or marker to edit it. Click anywhere in the arrangement to place the insert marker: new cues, locators and markers go there, and Play starts there.</p>';
     }
     const { kind, ref } = selection;
     if (kind === 'track') return trackPanel(ref, p);

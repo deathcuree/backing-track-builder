@@ -139,6 +139,11 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
    and it moves to the right ear. The **In-ears** and **Main** master sliders survive a reload.
 8. **Export.** Save, then **Export WAV**: left = everything routed to In-ears or Both, right =
    everything routed to Main or Both, from bar 1 to the end bar.
+9. **Insert marker.** Click anywhere in the arrangement (an empty lane, inside a waveform, or the bar
+   ruler): a blinking line and the orange triangle mark the spot, snapped to the grid for the zoom
+   (Cmd/Ctrl-click for sixteenths), and the position box shows it. Click a Browser cue: it lands on the
+   marker. **+** on Locators/Tempo/Time sig. adds at the marker's bar. Press Play: playback starts at
+   the marker, even in the middle of a bar; Stop returns to it.
 
 ### Results
 - 2026-09-29 (automated, headless Brave via DevTools protocol, isolated data folder; a generated
@@ -156,4 +161,9 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
     0.000 s, continuing through the 3/4 change at 12.000 s.
   - Zoom: Cmd/Ctrl + wheel and −/+ change the width around the pointer; deep zoom shows sixteenth
     lines with the test bursts on the beat lines.
-  - Not yet done: steps 1–8 by ear with a real song on the user's laptop.
+  - Step 9 (added after review, 2026-09-29): click inside the waveform at 9.3 s → marker 5.4.1 (1/4
+    grid at that zoom) and the audio track selected; Cmd-click in the Click lane → 5.3.3; Browser
+    "Build" added at 5.3.3; + Locator → bar 5. Play from 5.3.3 (9.25 s): position 5. 3. 4 right after
+    Play; recorded output: the Build cue at the start, then the next beats at +0.25 s, +0.75 s, … on both
+    the click and the song (in step); Stop → back at 5. 3. 3.
+  - Not yet done: steps 1–9 by ear with a real song on the user's laptop.

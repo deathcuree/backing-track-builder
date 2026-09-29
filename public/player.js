@@ -109,20 +109,26 @@ export class Player {
     this.routing?.setMix(this.mix);
   }
 
-  /** Starts at the downbeat of `fromBar`. */
-  async play({ fromBar = 1 } = {}) {
+  /**
+   * Starts `offsetSec` seconds into bar `fromBar` (0 = its downbeat), like Ableton playing from the
+   * insert marker. The bar is scheduled as if it had started earlier; what lies before the start
+   * point is skipped.
+   */
+  async play({ fromBar = 1, offsetSec = 0 } = {}) {
     if (this.playing || !this.schedule) return;
     const ctx = this.#context();
     await ctx.resume();
     this.state = initialPlayState(this.schedule, { fromBar });
     this.prev = null;
     this.seamNext = false;
-    this.startTime = ctx.currentTime + START_DELAY_SEC;
+    const startAt = ctx.currentTime + START_DELAY_SEC;
+    this.startTime = startAt - offsetSec; // when bar `fromBar` would have begun
+    this.skipBefore = startAt - 0.001;
     this.nextBarTime = this.startTime;
     this.barLog = []; // { bar, start } for the playhead
     this.endTime = null;
     this.playing = true;
-    this.#startClips(this.#barSec(fromBar), this.startTime, false);
+    this.#startClips(this.#barSec(fromBar) + offsetSec, startAt, false);
     this.timer = setInterval(() => this.#tick(), TIMER_MS);
     this.#tick();
     this.#animate();
@@ -188,7 +194,8 @@ export class Player {
     for (const e of barEvents(this.schedule, this.state)) {
       const buffer = this.buffers.get(e.sample);
       const strip = this.strips.get(e.track);
-      if (buffer && strip) this.#playOneShot(buffer, strip.input, barTime + e.offset);
+      const when = barTime + e.offset;
+      if (buffer && strip && when >= this.skipBefore) this.#playOneShot(buffer, strip.input, when);
     }
   }
 
