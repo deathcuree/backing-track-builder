@@ -89,3 +89,22 @@ Setup: three saved songs (at least one with stems), headphones on. Click **Live*
   - UI: setlist create/rename/add, ←/→ only while stopped, key 3 → pending → Chorus at bar 13, L → looping,
     live mute → "Save mix" saved to the song, setlist survives server restart, no console/server errors.
   - Not yet done: minutes-long loop by ear and the full rehearsal (steps 4 and 6) on the user's laptop.
+
+## BTB-07: WAV export
+
+1. Open a saved song with stems in the Edit view and press **Export WAV** (it is disabled while there
+   are unsaved changes). The note says "Exported <title>.wav (m:ss) to the exports folder" and the
+   browser downloads the same file.
+2. Play the file in QuickTime or on a phone: it starts right on bar 1 (no count-in), click and guide
+   in the **left** ear only, band tracks in the **right** ear only, same length as the song.
+3. Mute a stem, Save, export again: that stem is missing from the file, which replaces the old one.
+4. As a backup rig: phone → 3.5 mm-to-dual-¼″ Y-cable → left to the in-ear mixer, right to front of house.
+
+### Results
+- 2026-09-29 (automated, headless Brave, isolated data folder; bar-pitch test stem + a muted 3 kHz tone):
+  - AC 10: first click on the left at 0.091 ms (the sample's own attack); 40.000 s = 20 bars at 120 BPM;
+    right channel = stems (bar 1 at 400 Hz, bar 13 at 1600 Hz at 24 s); muted stem absent; left identical to a
+    render without stems; +100 ms offset → stems at 100.045 ms.
+  - Export button → exports/Way Maker (Live).wav; `afinfo`: WAVE, 2 ch, 44100 Hz, Int16, 40.000000 s;
+    read back independently with Python: click at 0.045 ms left, stem at 0.045 ms right, silence between.
+  - Not yet done: playing the file in QuickTime / on a phone by ear (steps 2–4).

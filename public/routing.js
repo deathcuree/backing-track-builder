@@ -51,6 +51,25 @@ export function createRouting(ctx, mix = {}) {
   return routing;
 }
 
+/**
+ * Export layout (spec §2.7) for a backup file played through a Y-cable:
+ *   click + guide ──► left      stems ──► right
+ * Each side ends in the same safety limiter as live playback.
+ */
+export function createExportRouting(ctx) {
+  const merger = ctx.createChannelMerger(2);
+  const left = monoBus(ctx);
+  const right = monoBus(ctx);
+  const [leftLimit, leftOut] = limiter(ctx);
+  const [rightLimit, rightOut] = limiter(ctx);
+  left.connect(leftLimit);
+  right.connect(rightLimit);
+  leftOut.connect(merger, 0, 0);
+  rightOut.connect(merger, 0, 1);
+  merger.connect(ctx.destination);
+  return { clickGuide: left, stems: right };
+}
+
 export function dbToGain(db) {
   return 10 ** (db / 20);
 }
