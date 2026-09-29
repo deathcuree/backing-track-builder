@@ -32,6 +32,7 @@ export class Player {
     this.sources = new Set();
     this.clipSegments = []; // { src, gain } for the audio clips currently playing
     this.mix = {};
+    this.loop = null; // { startBar, endBar } while looping
     this.playing = false;
   }
 
@@ -110,6 +111,17 @@ export class Player {
   }
 
   /**
+   * Loop `range` (whole bars), or stop looping with null. While playing, it applies from the next
+   * bar line: after the range's last bar, playback goes back to its first.
+   */
+  setLoop(range) {
+    this.loop = range;
+    if (!this.playing || !this.prev) return;
+    this.prev = this.#withLoop(this.prev);
+    this.#recomputeNext();
+  }
+
+  /**
    * Starts `offsetSec` seconds into bar `fromBar` (0 = its downbeat), like Ableton playing from the
    * insert marker. The bar is scheduled as if it had started earlier; what lies before the start
    * point is skipped.
@@ -118,7 +130,7 @@ export class Player {
     if (this.playing || !this.schedule) return;
     const ctx = this.#context();
     await ctx.resume();
-    this.state = initialPlayState(this.schedule, { fromBar });
+    this.state = this.#withLoop(initialPlayState(this.schedule, { fromBar }));
     this.prev = null;
     this.seamNext = false;
     const startAt = ctx.currentTime + START_DELAY_SEC;
@@ -157,6 +169,15 @@ export class Player {
       this.routing = createRouting(this.ctx, this.mix);
     }
     return this.ctx;
+  }
+
+  // The loop range applied to a play state; a range outside the loaded song is ignored.
+  #withLoop(state) {
+    try {
+      return nextPosition(this.schedule, state, { type: 'loop', range: this.loop }).state;
+    } catch {
+      return nextPosition(this.schedule, state, { type: 'loop', range: null }).state;
+    }
   }
 
   #barSec(bar) {

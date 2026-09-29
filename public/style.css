@@ -216,6 +216,24 @@ input[type="checkbox"] { accent-color: var(--accent); }
   background: var(--playhead); pointer-events: none; z-index: 1;
 }
 
+.loop-brace {
+  position: absolute; top: 0; height: 7px;
+  background: #6b6b6b; border-radius: 0 0 3px 3px; pointer-events: none;
+}
+.loop-brace.on { background: var(--accent); }
+.drop-line {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 2px; margin-left: -1px;
+  background: var(--select); pointer-events: none; z-index: 2;
+}
+.drag-readout {
+  position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none;
+  background: #111; color: var(--fg); border: 1px solid var(--panel-3); border-radius: 3px;
+  padding: 1px 6px; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.arrangement .cue, .arrangement .loc, .arrangement .mk { cursor: grab; touch-action: none; }
+.arrangement .clip { cursor: grab; touch-action: none; }
+.refused { opacity: 0.4; outline: 2px dashed var(--warn); }
+
 /* Detail panel */
 .detail { grid-area: det; background: var(--panel); overflow-y: auto; padding: 8px 12px; }
 .detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }

@@ -31,6 +31,8 @@ async function start(catalog) {
   let songs = [];
   let selection = null; // { kind: 'track'|'cue'|'locator'|'tempo'|'meter', ref } or null (the song)
   let cursor = [1, 1, 1]; // insert marker [bar, beat, sixteenth]: where new things go and Play starts
+  let loop = null; // loop brace { startBar, endBar } or null
+  let loopOn = false;
   let grid = null; // last grid that could be built (kept while tempo/meter fields are being fixed)
   let errors = [];
   let warnings = [];
@@ -60,6 +62,12 @@ async function start(catalog) {
       changed({ structural: selection?.kind === 'meter' });
     },
     onPlay: togglePlay,
+    onLoop: () => {
+      loopOn = !loopOn;
+      if (loopOn && !loop) loop = defaultLoop();
+      applyLoop();
+    },
+    onGrid: (value) => arrangement.setGrid(value),
     onZoom: (factor) => arrangement.zoom(factor),
     onImport: () => $('import-files').click(),
     onExport: exportWav,
@@ -92,7 +100,21 @@ async function start(catalog) {
       player.setMix({ [key]: db });
       saveSettingsSoon();
     },
-    onAdd: addAtStartBar,
+    onAdd: (kind) => addAt(kind, cursor[0]),
+    onAddAt: (kind, bar) => {
+      cursor = [bar, 1, 1];
+      addAt(kind, bar);
+    },
+    onMove: moveItem,
+    onDropCue: (cue, at) => {
+      const clip = { at, type: cue.type, key: cue.key };
+      cuesTrack().clips.push(clip);
+      select({ kind: 'cue', ref: clip });
+    },
+    onLoopRange: (range) => {
+      loop = range;
+      applyLoop();
+    },
     getPeaks: waveformFor,
   });
   const detail = createDetail($('detail'), {
@@ -143,6 +165,10 @@ async function start(catalog) {
     isNew = !saved;
     selection = null;
     cursor = [1, 1, 1];
+    loop = null;
+    loopOn = false;
+    player.setLoop(null);
+    controlbar.setLoop(false);
     grid = null;
     extraMessages = [];
     setNote('');
@@ -165,6 +191,10 @@ async function start(catalog) {
     }
     grid ??= buildGrid(newSong());
     cursor = clampCursor(cursor);
+    if (loop && loop.endBar > grid.bars.length) {
+      loop = null;
+      if (loopOn) applyLoop();
+    }
     warnings = errors.length ? [] : buildSchedule(song, catalog).warnings;
     if (structural) detail.show(song, selection);
     detail.showErrors(errors);
@@ -175,7 +205,7 @@ async function start(catalog) {
   }
 
   function render() {
-    arrangement.render({ song, grid, selection, invalid: invalidItems(), cursor, mix: settings.mix });
+    arrangement.render({ song, grid, selection, invalid: invalidItems(), cursor, mix: settings.mix, loop, loopOn });
     controlbar.render(song);
     if (!player.playing) showPosition(null);
     const dirty = isNew || isDirty();
@@ -194,7 +224,49 @@ async function start(catalog) {
 
   function select(next) {
     selection = next;
+    if (next?.kind === 'locator') loop = sectionOf(next.ref.bar) ?? loop; // the brace follows the locator
+    if (loopOn) player.setLoop(loop);
     changed({ structural: true, live: true });
+  }
+
+  // The locator section containing `bar` (from its locator to the bar before the next one).
+  function sectionOf(bar) {
+    const bars = song.locators.map((l) => l.bar).filter((b) => b <= grid.bars.length).sort((a, b) => a - b);
+    const start = bars.findLast((b) => b <= bar);
+    if (start === undefined) return null;
+    const next = bars.find((b) => b > start);
+    return { startBar: start, endBar: (next ?? grid.bars.length + 1) - 1 };
+  }
+
+  // Loop brace when Loop is switched on without one: the section at the insert marker, else 4 bars.
+  function defaultLoop() {
+    const bar = cursor[0];
+    return sectionOf(bar) ?? { startBar: bar, endBar: Math.min(bar + 3, grid.bars.length) };
+  }
+
+  function applyLoop() {
+    controlbar.setLoop(loopOn);
+    player.setLoop(loopOn ? loop : null);
+    render();
+  }
+
+  // A finished drag in the arrangement: one edit. Refused when it would put two locators or two
+  // markers of a kind on the same bar.
+  function moveItem(kind, ref, value) {
+    if (kind === 'cue') {
+      ref.at = value;
+    } else if (kind === 'track') {
+      ref.clip.startSec = value;
+    } else {
+      const list = kind === 'locator' ? song.locators : song[kind];
+      if (list.some((m) => m !== ref && m.bar === value)) {
+        setNote(`There is already a ${kind === 'locator' ? 'locator' : `${kind} marker`} at bar ${value}.`);
+        return render();
+      }
+      ref.bar = value;
+      if (kind !== 'locator') list.sort((a, b) => a.bar - b.bar);
+    }
+    select({ kind, ref });
   }
 
   function contains({ kind, ref }) {
@@ -215,16 +287,16 @@ async function start(catalog) {
     return beat > b.beats || sixteenth > 16 / b.unit ? [bar, 1, 1] : [bar, beat, sixteenth];
   }
 
-  // Adds a locator or marker at the insert marker's bar, or selects the one already there.
-  function addAtStartBar(kind) {
-    const startBar = cursor[0];
+  // Adds a locator or marker at `barNumber`, or selects the one already there. A marker copies the
+  // tempo or time signature in effect there.
+  function addAt(kind, barNumber) {
     const list = kind === 'locator' ? song.locators : song[kind];
-    let item = list.find((m) => m.bar === startBar);
+    let item = list.find((m) => m.bar === barNumber);
     if (!item) {
-      const bar = grid.bars[startBar - 1];
-      item = kind === 'locator' ? { bar: startBar, name: 'Section' }
-        : kind === 'tempo' ? { bar: startBar, bpm: bar.bpm }
-          : { bar: startBar, beats: bar.beats, unit: bar.unit };
+      const bar = grid.bars[barNumber - 1];
+      item = kind === 'locator' ? { bar: barNumber, name: 'Section' }
+        : kind === 'tempo' ? { bar: barNumber, bpm: bar.bpm }
+          : { bar: barNumber, beats: bar.beats, unit: bar.unit };
       list.push(item);
       if (kind !== 'locator') list.sort((a, b) => a.bar - b.bar);
     }

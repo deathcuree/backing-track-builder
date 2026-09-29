@@ -1,6 +1,7 @@
 // Browser (left): the song library and the guide samples that can be placed on the Cues track,
 // grouped like the sample pack (Sections, Dynamic cues, Counts) in the Cues track's language.
 import { esc, cueChoices, LANGUAGE_NAMES } from './ui.js';
+import { CUE_MIME } from './arrangement.js';
 
 const GROUPS = [['section', 'Sections'], ['cue', 'Dynamic cues'], ['count', 'Counts']];
 
@@ -17,7 +18,7 @@ export function createBrowser(el, { catalog, onOpenSong, onNewSong, onAddCue }) 
     </section>
     <section class="br-section br-cues">
       <div class="br-head"><h2>Cues</h2><span class="muted small" id="br-language"></span></div>
-      <p class="muted small br-hint">Click a cue to add it at the insert marker.</p>
+      <p class="muted small br-hint">Drag onto the Cues track, or click to add at the insert marker.</p>
       <div id="br-cue-groups"></div>
     </section>`;
   let language = null;
@@ -28,6 +29,12 @@ export function createBrowser(el, { catalog, onOpenSong, onNewSong, onAddCue }) 
     if (song) return onOpenSong(song.dataset.song);
     const cue = e.target.closest('[data-cue-type]');
     if (cue) onAddCue({ type: cue.dataset.cueType, key: cue.dataset.cueKey });
+  });
+  el.addEventListener('dragstart', (e) => {
+    const cue = e.target.closest('[data-cue-type]');
+    if (!cue) return;
+    e.dataTransfer.setData(CUE_MIME, JSON.stringify({ type: cue.dataset.cueType, key: cue.dataset.cueKey }));
+    e.dataTransfer.effectAllowed = 'copy';
   });
 
   return {
@@ -49,7 +56,7 @@ export function createBrowser(el, { catalog, onOpenSong, onNewSong, onAddCue }) 
           <summary>${label}</summary>
           <ul class="br-list">
             ${cueChoices(catalog, lang, type).map(({ key, english }) => `
-              <li><button type="button" class="br-cue" data-cue-type="${type}" data-cue-key="${esc(key)}"
+              <li><button type="button" class="br-cue" draggable="true" data-cue-type="${type}" data-cue-key="${esc(key)}"
                 title="Add “${esc(key)}” at the insert marker${english ? ' (English recording)' : ''}">
                 ${esc(key)}${english ? ' <span class="br-tag">EN</span>' : ''}
               </button></li>`).join('') || '<li class="muted small br-empty">None in this language.</li>'}

@@ -5,10 +5,13 @@
 // Time runs left to right at `pps` pixels per second. Bars are placed from the grid, so tempo and
 // meter changes show as wider or narrower bars. Rulers, grid lines and waveforms are drawn on
 // canvases that cover only the visible part (a song can be thousands of screens wide when zoomed
-// in); clips, cues, locators and markers are elements so they can be clicked.
+// in); clips, cues, locators and markers are elements so they can be clicked and dragged.
 //
-// Clicking anywhere in the lanes or the bar ruler places the insert marker (snapped to the grid for
-// the zoom; Cmd/Ctrl for sixteenths): new cues, locators and markers go there and Play starts there.
+// Clicking anywhere in the lanes or the bar ruler places the insert marker (snapped to the grid;
+// Cmd/Ctrl for sixteenths): new cues, locators and markers go there and Play starts there.
+// Dragging only moves the element on screen; the song changes once, when you let go (onMove), so a
+// drag is one edit. Cues snap to the grid (hold Cmd/Ctrl for sixteenths), locators and markers to
+// bars, audio clips move freely.
 import { OUTPUTS, LIMITS } from '/shared/song.js';
 import { autoStep } from '/shared/grid.js';
 import { peakRange } from '/shared/waveform.js';
@@ -21,6 +24,8 @@ const CUE_ROWS = 3;
 const CUE_ROW_PX = 18;
 const CLIP_TITLE_PX = 14;
 const STRIPS = [['locator', 'Locators'], ['tempo', 'Tempo'], ['meter', 'Time sig.']];
+const DRAG_THRESHOLD_PX = 3;
+export const CUE_MIME = 'application/x-btb-cue'; // Browser cue being dragged: JSON { type, key }
 
 /**
  * @param {HTMLElement} el
@@ -28,6 +33,10 @@ const STRIPS = [['locator', 'Locators'], ['tempo', 'Tempo'], ['meter', 'Time sig
  *           onCursor: (at: [number, number, number]) => void, onTrackChange: (track: object) => void,
  *           onMasterChange: (key: 'inEarsDb'|'mainDb', db: number) => void,
  *           onAdd: (kind: 'locator'|'tempo'|'meter') => void,
+ *           onAddAt: (kind: 'locator'|'tempo'|'meter', bar: number) => void,
+ *           onMove: (kind: string, ref: object, value: number[]|number) => void,
+ *           onDropCue: (cue: { type: string, key: string }, at: number[]) => void,
+ *           onLoopRange: (range: { startBar: number, endBar: number }) => void,
  *           getPeaks: (track: object) => { peaks: object, sampleRate: number, duration: number } | null }} handlers
  */
 export function createArrangement(el, handlers) {
@@ -36,8 +45,8 @@ export function createArrangement(el, handlers) {
       <div class="arr-inner">
         <div class="arr-head">
           <div class="arr-row ruler-row">
-            <div class="lane" data-ruler="bars"><canvas data-draw="bars"></canvas><div class="start-marker" title="Insert marker"></div></div>
-            <div class="hdr hdr-strip"><span class="hdr-title">Bar</span><span class="muted small">Click anywhere: insert marker</span></div>
+            <div class="lane" data-ruler="bars"><canvas data-draw="bars"></canvas><div class="loop-brace" hidden></div><div class="start-marker" title="Insert marker"></div></div>
+            <div class="hdr hdr-strip"><span class="hdr-title">Bar</span><span class="muted small">Click: insert marker · Shift-drag: loop</span></div>
           </div>
           ${STRIPS.map(([kind, label]) => `
             <div class="arr-row strip-row" data-strip="${kind}">
@@ -61,8 +70,10 @@ export function createArrangement(el, handlers) {
         </div>
         <div class="insert-marker"></div>
         <div class="playhead" hidden></div>
+        <div class="drop-line" hidden></div>
       </div>
-    </div>`;
+    </div>
+    <div class="drag-readout" hidden></div>`;
 
   const scroll = el.querySelector('.arr-scroll');
   const inner = el.querySelector('.arr-inner');
@@ -70,7 +81,13 @@ export function createArrangement(el, handlers) {
   const playhead = el.querySelector('.playhead');
   const startMarker = el.querySelector('.start-marker');
   const insertMarker = el.querySelector('.insert-marker');
+  const loopBrace = el.querySelector('.loop-brace');
+  const dropLine = el.querySelector('.drop-line');
+  const readout = el.querySelector('.drag-readout');
   let pps = 40;
+  let gridSetting = 'auto'; // 'auto', 'bar' or sixteenths per step (1, 2, 4)
+  let drag = null; // item or loop brace being dragged
+  let suppressClick = false; // the click that ends a drag is not a selection
   let view = null; // last render input
   let trackSignature = '';
   let refs = {}; // kind -> objects, indexed by the items' data-i
@@ -87,6 +104,10 @@ export function createArrangement(el, handlers) {
   }, { passive: false });
 
   el.addEventListener('click', (e) => {
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
     const add = e.target.closest('[data-add]');
     if (add) return handlers.onAdd(add.dataset.add);
     const ruler = e.target.closest('[data-ruler="bars"]');
@@ -104,6 +125,116 @@ export function createArrangement(el, handlers) {
     }
     if (e.target.closest('.hdr-mixer, .hdr-master, .hdr-strip')) return;
     if (e.target.closest('.lane')) handlers.onSelect(null);
+  });
+
+  el.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || !view) return;
+    const ruler = e.target.closest('[data-ruler="bars"]');
+    if (ruler && e.shiftKey) {
+      const bar = view.grid.positionAt(laneX(e, ruler) / pps).bar;
+      drag = { kind: 'loop', anchor: bar, range: { startBar: bar, endBar: bar }, moved: true };
+      ruler.setPointerCapture(e.pointerId);
+      showBrace(drag.range, false);
+      return;
+    }
+    const item = e.target.closest('.cue, .loc, .mk, .clip');
+    if (!item) return;
+    const kind = item.dataset.kind;
+    const ref = kind === 'track' ? trackById(item.dataset.track) : refs[kind]?.[item.dataset.i];
+    if (!ref || ((kind === 'tempo' || kind === 'meter') && view.song[kind][0] === ref)) return; // bar-1 markers stay
+    drag = { kind, ref, item, startX: e.clientX, left: parseFloat(item.style.left), moved: false, value: null };
+    item.setPointerCapture(e.pointerId);
+  });
+
+  el.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    if (drag.kind === 'loop') {
+      const ruler = el.querySelector('[data-ruler="bars"]');
+      const bar = view.grid.positionAt(laneX(e, ruler) / pps).bar;
+      drag.range = { startBar: Math.min(bar, drag.anchor), endBar: Math.max(bar, drag.anchor) };
+      showBrace(drag.range, false);
+      return;
+    }
+    const dx = e.clientX - drag.startX;
+    if (!drag.moved && Math.abs(dx) < DRAG_THRESHOLD_PX) return;
+    drag.moved = true;
+    const sec = (drag.left + dx) / pps;
+    const { grid } = view;
+    let x;
+    let label;
+    if (drag.kind === 'cue') {
+      drag.value = sec < 0 || sec >= grid.endSec ? null : grid.snap(sec, e.metaKey || e.ctrlKey ? 1 : stepAt(sec));
+      x = drag.value ? grid.secAt(drag.value) * pps : drag.left + dx;
+      label = drag.value ? drag.value.join('.') : 'outside the song';
+    } else if (drag.kind === 'track') {
+      const [min, max] = LIMITS.clipStartSec;
+      drag.value = Math.round(Math.min(max, Math.max(min, sec)) * 1000) / 1000;
+      x = drag.value * pps;
+      label = `starts at ${clock(drag.value, true)}`;
+    } else {
+      drag.value = sec < 0 || sec >= grid.endSec ? null : grid.nearestBar(sec);
+      x = drag.value ? barX(drag.value) : drag.left + dx;
+      label = drag.value ? `bar ${drag.value}` : 'outside the song';
+    }
+    drag.item.style.left = `${x}px`;
+    drag.item.classList.toggle('refused', drag.value === null);
+    showReadout(label, e);
+  });
+
+  const endDrag = (e) => {
+    if (!drag) return;
+    const done = drag;
+    drag = null;
+    readout.hidden = true;
+    if (done.moved) {
+      // The browser follows pointerup with a click; that one is part of the drag, not a selection.
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 0);
+    }
+    if (done.kind === 'loop') return handlers.onLoopRange(done.range);
+    if (!done.moved) return;
+    if (done.value === null || e.type === 'pointercancel') return layout(); // put it back
+    handlers.onMove(done.kind, done.ref, done.value);
+  };
+  el.addEventListener('pointerup', endDrag);
+  el.addEventListener('pointercancel', endDrag);
+
+  // Double-click a strip to add a locator or marker at that bar.
+  el.addEventListener('dblclick', (e) => {
+    const lane = e.target.closest('[data-lane]');
+    if (!lane || !view || e.target.closest('[data-kind]')) return;
+    const sec = laneX(e, lane) / pps;
+    if (sec >= view.grid.endSec) return;
+    handlers.onAddAt(lane.dataset.lane, view.grid.positionAt(sec).bar);
+  });
+
+  // Browser cues dropped on the Cues lane.
+  el.addEventListener('dragover', (e) => {
+    const at = cueDropAt(e);
+    dropLine.hidden = !at;
+    if (!at) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    dropLine.style.transform = `translateX(${view.grid.secAt(at) * pps}px)`;
+    showReadout(at.join('.'), e);
+  });
+  el.addEventListener('dragleave', (e) => {
+    if (!el.contains(e.relatedTarget)) {
+      dropLine.hidden = true;
+      readout.hidden = true;
+    }
+  });
+  el.addEventListener('drop', (e) => {
+    const at = cueDropAt(e);
+    dropLine.hidden = true;
+    readout.hidden = true;
+    if (!at) return;
+    e.preventDefault();
+    try {
+      handlers.onDropCue(JSON.parse(e.dataTransfer.getData(CUE_MIME)), at);
+    } catch {
+      // not a cue from the Browser
+    }
   });
 
   el.addEventListener('input', (e) => {
@@ -137,7 +268,8 @@ export function createArrangement(el, handlers) {
   return {
     /**
      * @param {{ song: object, grid: object, selection: { kind: string, ref: object } | null,
-     *           invalid: Set<object>, cursor: [number, number, number], mix: { inEarsDb: number, mainDb: number } }} next
+     *           invalid: Set<object>, cursor: [number, number, number], mix: { inEarsDb: number, mainDb: number },
+     *           loop: { startBar: number, endBar: number } | null, loopOn: boolean }} next
      */
     render(next) {
       view = next;
@@ -168,7 +300,48 @@ export function createArrangement(el, handlers) {
     },
     /** Redraws canvases (e.g. when a waveform finished loading). */
     redraw,
+    /** @param {'auto'|'bar'|1|2|4} value grid resolution for drawing and snapping */
+    setGrid(value) {
+      gridSetting = value;
+      redraw();
+    },
   };
+
+  // Grid step for the bar at `sec`: the chosen one, or (Auto) the finest that fits the zoom.
+  function stepAt(sec) {
+    return stepFor(view.grid.bars[view.grid.positionAt(sec).bar - 1]);
+  }
+
+  function stepFor(b) {
+    return gridSetting === 'auto' ? autoStep((b.sec * pps) / (b.beats * (16 / b.unit))) : gridSetting;
+  }
+
+  function cueDropAt(e) {
+    if (!view || !e.dataTransfer?.types.includes(CUE_MIME)) return null;
+    const lane = e.target.closest('.track-cues .lane');
+    if (!lane) return null;
+    const sec = laneX(e, lane) / pps;
+    if (sec < 0 || sec >= view.grid.endSec) return null;
+    return view.grid.snap(sec, e.metaKey || e.ctrlKey ? 1 : stepAt(sec));
+  }
+
+  function showReadout(text, e) {
+    readout.textContent = text;
+    readout.hidden = false;
+    const box = el.getBoundingClientRect();
+    readout.style.transform = `translate(${e.clientX - box.left + 12}px, ${e.clientY - box.top - 26}px)`;
+  }
+
+  function showBrace(range, on) {
+    loopBrace.hidden = !range;
+    if (!range) return;
+    const start = barX(range.startBar);
+    const last = view.grid.bars[range.endBar - 1];
+    loopBrace.style.left = `${start}px`;
+    loopBrace.style.width = `${(last.startSec + last.sec) * pps - start}px`;
+    loopBrace.classList.toggle('on', on);
+    loopBrace.title = `Loop bars ${range.startBar}–${range.endBar}`;
+  }
 
   function contentWidth() {
     return Math.max(scroll.clientWidth - HEADER_PX, view.grid.endSec * pps + END_MARGIN_PX);
@@ -208,6 +381,8 @@ export function createArrangement(el, handlers) {
     startMarker.style.left = cursorX;
     insertMarker.style.left = cursorX;
     insertMarker.title = `Insert marker ${view.cursor.join('.')}`;
+    const loop = view.loop && view.loop.endBar <= grid.bars.length ? view.loop : null;
+    showBrace(loop, view.loopOn);
     placePlayhead();
     redraw();
   }
@@ -216,9 +391,7 @@ export function createArrangement(el, handlers) {
   function cursorAt(event, lane) {
     const sec = laneX(event, lane) / pps;
     if (sec >= view.grid.endSec) return null;
-    const bar = view.grid.bars[view.grid.positionAt(sec).bar - 1];
-    const step = event.metaKey || event.ctrlKey ? 1 : autoStep((bar.sec * pps) / (bar.beats * (16 / bar.unit)));
-    return view.grid.snap(sec, step);
+    return view.grid.snap(sec, event.metaKey || event.ctrlKey ? 1 : stepAt(sec));
   }
 
   function trackById(id) {
@@ -425,11 +598,10 @@ export function createArrangement(el, handlers) {
       g.fillStyle = line;
       g.fillRect(Math.round(x0), 0, 1, height);
       if (light) continue;
-      const beatPx = b.sec * pps / b.beats;
-      if (beatPx < 8) continue;
+      const step = stepFor(b);
+      if (step === 'bar') continue;
       const perBeat = 16 / b.unit;
-      const sixteenthPx = beatPx / perBeat;
-      const step = sixteenthPx >= 10 ? 1 : perBeat;
+      const sixteenthPx = (b.sec * pps) / (b.beats * perBeat);
       g.fillStyle = beatLine;
       for (let s = step; s < b.beats * perBeat; s += step) {
         g.globalAlpha = s % perBeat === 0 ? 1 : 0.5;

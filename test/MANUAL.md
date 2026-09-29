@@ -167,3 +167,38 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
     Play; recorded output: the Build cue at the start, then the next beats at +0.25 s, +0.75 s, … on both
     the click and the song (in step); Stop → back at 5. 3. 3.
   - Not yet done: steps 1–9 by ear with a real song on the user's laptop.
+
+## BTB-10: Direct editing in the Arrangement
+
+1. **Drag cues.** Drag a cue left/right: it snaps to the grid (Control Bar → Grid: Auto follows the
+   zoom; or 1 Bar, 1/4, 1/8, 1/16) and a small readout shows the position. Hold Cmd (Ctrl on Windows)
+   for sixteenths. Letting go outside the song puts it back.
+2. **Drag locators and markers.** They snap to bars. Dropping a locator on another locator's bar (or a
+   marker on another marker's bar) is refused with a message. The bar-1 tempo and time signature
+   markers don't move.
+3. **Drag an audio clip.** It moves freely; the readout shows the start time to the millisecond. Zoom
+   in and line the first downbeat up with a bar line.
+4. **Drag from the Browser.** Drag "Build" from Cues → Dynamic cues onto the Cues track: a line shows
+   where it will land, and it is added there and selected.
+5. **Double-click** the Locators, Tempo or Time sig. strip to add one at that bar.
+6. **Loop.** Shift-drag across the bar ruler to set the loop brace (or select a locator: the brace
+   follows its section). Press **Loop** and Play: after the brace's last bar playback jumps back to
+   its first bar with no gap or double click. Press Loop again: playback carries on past the brace.
+
+### Results
+- 2026-09-29 (automated, headless Brave via DevTools protocol, real mouse events; isolated data folder
+  and the BTB-09 test song):
+  - Steps 1–3 and 5: cue at 2.4.1 dragged +1.1 s → 3.2.1 (Auto = 1/4 at that zoom); Cmd-drag +0.3 s →
+    3.2.3; Grid 1 Bar → 4.1.1. Locator Verse 1 → bar 10; onto Intro's bar → refused ("There is already
+    a locator at bar 3."). 3/4 marker → bar 8; bar-1 tempo marker doesn't drag. Clip → 2.500 s.
+    Double-click on the locator strip → "Section" locator added.
+  - Step 4: headless Brave does not start native drags from synthetic mouse input, so the drop was
+    checked with DragEvents carrying a real DataTransfer: dragstart puts the cue in the
+    `application/x-btb-cue` payload; dragover on the Cues lane is accepted, shows the drop line and
+    "5.3.1"; the drop adds "Build" at 5.3.1 and selects it. Over the Click lane and past the song end:
+    not accepted.
+  - Step 6 (player output recorded with a test-only tap on the audio destination): brace bars 3–4,
+    Loop on, play from bar 3 → position 3→4→3→4→3; in-ear click intervals exactly 0.500 s through
+    every seam; song (main) intervals 0.4989–0.5011 s. Selecting the Intro locator set the brace to bars
+    3–6; Loop off during bar 5 → playback continued 6→7→…→10.
+  - Not yet done: a real mouse drag from the Browser in Chrome (step 4), and all steps by ear.

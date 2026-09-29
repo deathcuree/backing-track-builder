@@ -9,7 +9,7 @@ const TAPS_AVERAGED = 4;
 /**
  * @param {HTMLElement} el
  * @param {{ onTempo: (bpm: number) => void, onMeter: (beats: number, unit: number) => void,
- *           onPlay: () => void, onZoom: (factor: number) => void, onImport: () => void,
+ *           onPlay: () => void, onLoop: () => void, onGrid: (value: 'auto'|'bar'|number) => void, onZoom: (factor: number) => void, onImport: () => void,
  *           onExport: () => void, onSave: () => void }} handlers
  */
 export function createControlBar(el, handlers) {
@@ -27,8 +27,13 @@ export function createControlBar(el, handlers) {
       <button id="cb-play" type="button" class="cb-play" aria-pressed="false" title="Play / Stop (Space)">▶</button>
       <output id="cb-position" class="cb-position" title="Position (bar. beat. sixteenth)">1. 1. 1</output>
       <output id="cb-time" class="cb-time">0:00</output>
+      <button id="cb-loop" type="button" aria-pressed="false" title="Loop the brace on the bar ruler (Shift-drag the ruler to set it)">Loop</button>
     </div>
     <div class="cb-group">
+      <label class="cb-label" for="cb-grid">Grid</label>
+      <select id="cb-grid" title="Snap for cues (hold Cmd/Ctrl while dragging for sixteenths)">
+        <option value="auto">Auto</option><option value="bar">1 Bar</option><option value="4">1/4</option><option value="2">1/8</option><option value="1">1/16</option>
+      </select>
       <button id="cb-zoom-out" type="button" title="Zoom out (−)" aria-label="Zoom out">−</button>
       <button id="cb-zoom-in" type="button" title="Zoom in (+)" aria-label="Zoom in">+</button>
     </div>
@@ -49,6 +54,11 @@ export function createControlBar(el, handlers) {
   $('cb-unit').addEventListener('change', meterChanged);
   $('cb-tap').addEventListener('click', tap);
   $('cb-play').addEventListener('click', handlers.onPlay);
+  $('cb-loop').addEventListener('click', handlers.onLoop);
+  $('cb-grid').addEventListener('change', () => {
+    const v = $('cb-grid').value;
+    handlers.onGrid(v === 'auto' || v === 'bar' ? v : Number(v));
+  });
   $('cb-zoom-in').addEventListener('click', () => handlers.onZoom(1.5));
   $('cb-zoom-out').addEventListener('click', () => handlers.onZoom(1 / 1.5));
   $('cb-import').addEventListener('click', handlers.onImport);
@@ -71,6 +81,9 @@ export function createControlBar(el, handlers) {
       $('cb-play').textContent = playing ? '■' : '▶';
       $('cb-play').setAttribute('aria-pressed', String(playing));
       $('cb-play').classList.toggle('on', playing);
+    },
+    setLoop(on) {
+      $('cb-loop').setAttribute('aria-pressed', String(on));
     },
     /** @param {{ bar: number, beat: number, sixteenth: number }} pos @param {number} songSec */
     setPosition(pos, songSec) {
