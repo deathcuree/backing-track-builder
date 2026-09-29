@@ -227,3 +227,27 @@ test('overlapping saves all succeed', async () => {
   const songs = await Promise.all(Array.from({ length: 5 }, () => call('PUT', '/api/songs/way-maker', song())));
   assert.deepEqual(songs.map((r) => r.status), Array(5).fill(200));
 });
+
+test('setlists: save, list, load, survive a restart; invalid ones are refused', async () => {
+  assert.deepEqual((await call('GET', '/api/setlists')).json, []);
+  const set = { version: 1, id: 'sunday', name: 'Sunday AM', songs: ['way-maker', 'gone-song'] };
+  const put = await call('PUT', '/api/setlists/sunday', set);
+  assert.equal(put.status, 200);
+  assert.ok(existsSync(join(root, 'setlists/sunday.json')));
+  await call('PUT', '/api/setlists/aaa', { version: 1, id: 'aaa', name: 'Christmas', songs: [] });
+  server.close();
+  await start();
+  assert.deepEqual((await call('GET', '/api/setlists/sunday')).json, set);
+  assert.deepEqual((await call('GET', '/api/setlists')).json,
+    [{ id: 'aaa', name: 'Christmas', count: 0 }, { id: 'sunday', name: 'Sunday AM', count: 2 }]);
+  assert.equal((await call('PUT', '/api/setlists/sunday', { ...set, name: '' })).status, 400);
+  assert.equal((await call('PUT', '/api/setlists/other', set)).status, 400);
+  assert.equal((await call('GET', '/api/setlists/nope')).status, 404);
+  assert.equal((await call('GET', '/api/setlists/..%2Fsettings')).status, 400);
+});
+
+test('setlists can be deleted', async () => {
+  assert.equal((await call('DELETE', '/api/setlists/aaa')).status, 200);
+  assert.equal((await call('GET', '/api/setlists/aaa')).status, 404);
+  assert.equal((await call('DELETE', '/api/setlists/aaa')).status, 404);
+});

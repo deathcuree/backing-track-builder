@@ -2,16 +2,23 @@
 // A 25 ms timer schedules whole bars as they come within 150 ms of the audio clock. Which bar
 // comes next is decided by nextPosition (shared/schedule.js), and bar start times are computed
 // from whole-bar counts, so long songs and loops never drift.
-import { buildSchedule, initialPlayState, nextPosition, barEvents, stemStart } from '/shared/schedule.js';
+//
+// `prev` is the last scheduled bar (normally the one you hear); `state` is the next, not yet
+// scheduled bar. Jump and loop requests change `prev` and recompute `state`, so they take effect
+// on the next downbeat. Only a request in the last ~150 ms of a bar lands one bar later, because
+// the next bar is already scheduled by then. Stems restart at jumps/loops with a 10 ms crossfade.
+import { buildSchedule, initialPlayState, nextPosition, barEvents, stemStart, secAtBar } from '/shared/schedule.js';
 import { createRouting, dbToGain, setLevel } from './routing.js';
 
 const TIMER_MS = 25;
 const HORIZON_SEC = 0.15;
 const START_DELAY_SEC = 0.1;
+const SEAM_FADE_SEC = 0.01;
 
 export class Player {
   /**
-   * @param {{ onPosition?: (pos: { bar: number, beat: number, countIn: boolean } | null) => void,
+   * @param {{ onPosition?: (pos: { bar: number, beat: number, fraction: number, countIn: boolean,
+   *             section: number, pendingJump: number|null, loop: number|null } | null) => void,
    *           onStateChange?: (playing: boolean) => void }} handlers
    */
   constructor({ onPosition = () => {}, onStateChange = () => {} } = {}) {
@@ -23,7 +30,7 @@ export class Player {
     this.stemBuffers = new Map(); // "<song id>/<file>" -> AudioBuffer, current song only (stems are big)
     this.stemGains = new Map(); // file -> GainNode for the loaded song
     this.sources = new Set();
-    this.stemSources = [];
+    this.stemSegments = []; // { src, gain } for the stems currently playing
     this.mix = {};
     this.playing = false;
   }
@@ -39,7 +46,9 @@ export class Player {
     this.song = song;
     this.schedule = buildSchedule(song, catalog);
     const ctx = this.#context();
-    const needed = [...new Set(this.schedule.events.map((e) => e.sample))].filter((s) => !this.buffers.has(s));
+    // Section cues too: a jump can announce any section, even one whose cue isn't scheduled.
+    const samples = [...this.schedule.events.map((e) => e.sample), ...this.schedule.sections.map((s) => s.cueSample)];
+    const needed = [...new Set(samples)].filter((s) => s && !this.buffers.has(s));
     const failed = [];
     await Promise.all(needed.map(async (sample) => {
       try {
@@ -69,6 +78,29 @@ export class Player {
     this.routing?.setMix(this.mix);
   }
 
+  /**
+   * Jump to section `index` at the next downbeat. Pressing the same section again cancels;
+   * another section replaces it. Pressed in the first half of a bar, the target's name is spoken
+   * on the next beat so the band hears where they're going.
+   */
+  jump(index) {
+    if (!this.playing || !this.prev) return;
+    const { barSec } = this.schedule;
+    const prevStart = this.startTime + this.prev.barsElapsed * barSec;
+    const fraction = Math.min(1, Math.max(0, (this.ctx.currentTime - prevStart) / barSec));
+    const r = nextPosition(this.song, this.prev, { type: 'jump', section: index, barFraction: fraction });
+    this.prev = r.state;
+    this.#recomputeNext();
+    if (r.announce !== null) this.#announce(r.announce, prevStart);
+  }
+
+  /** Loop the section being heard (or release the loop). */
+  toggleLoop() {
+    if (!this.playing || !this.prev) return;
+    this.prev = nextPosition(this.song, this.prev, { type: 'loop' }).state;
+    this.#recomputeNext();
+  }
+
   /** Forget decoded stems (after a stem file is uploaded or replaced). */
   forgetStems() {
     this.stemBuffers.clear();
@@ -79,12 +111,14 @@ export class Player {
     const ctx = this.#context();
     await ctx.resume();
     this.state = initialPlayState(this.song);
+    this.prev = null;
+    this.seamNext = false;
     this.startTime = ctx.currentTime + START_DELAY_SEC;
     this.nextBarTime = this.startTime;
     this.barLog = []; // { bar, start } for the playhead
     this.endTime = null;
     this.playing = true;
-    this.#startStems(-this.schedule.countInBars * this.schedule.barSec, this.startTime);
+    this.#startStems(-this.schedule.countInBars * this.schedule.barSec, this.startTime, false);
     this.timer = setInterval(() => this.#tick(), TIMER_MS);
     this.#tick();
     this.#animate();
@@ -102,7 +136,7 @@ export class Player {
       src.disconnect();
     }
     this.sources.clear();
-    this.stemSources = [];
+    this.stemSegments = [];
     this.onPosition(null);
     this.onStateChange(false);
   }
@@ -120,39 +154,64 @@ export class Player {
   }
 
   #tick() {
-    const { ctx, schedule } = this;
+    const { ctx } = this;
     while (this.endTime === null && this.nextBarTime < ctx.currentTime + HORIZON_SEC) {
+      if (this.seamNext) this.#seamStems(this.nextBarTime, secAtBar(this.song, this.state.bar));
       this.#scheduleBar(this.nextBarTime);
       this.barLog.push({ bar: this.state.bar, start: this.nextBarTime });
       if (this.barLog.length > 8) this.barLog.shift();
-      const next = nextPosition(this.song, this.state, { type: 'barEnd' });
-      if (next.end) {
-        this.endTime = this.nextBarTime + schedule.barSec;
-        for (const src of this.stemSources) src.stop(this.endTime);
-        break;
-      }
-      this.state = next.state;
-      this.nextBarTime = this.startTime + this.state.barsElapsed * schedule.barSec;
+      this.prev = this.state;
+      this.#recomputeNext();
     }
     if (this.endTime !== null && ctx.currentTime >= this.endTime) this.stop();
+  }
+
+  // Decides the bar after `prev` (again, after a jump/loop request changed `prev`).
+  #recomputeNext() {
+    const { barSec } = this.schedule;
+    const next = nextPosition(this.song, this.prev, { type: 'barEnd' });
+    const nextStart = this.startTime + (this.prev.barsElapsed + 1) * barSec;
+    if (next.end) {
+      this.endTime = nextStart;
+      for (const { src } of this.stemSegments) src.stop(this.endTime);
+      return;
+    }
+    this.endTime = null;
+    this.state = next.state;
+    this.seamNext = Boolean(next.jumped || next.looped);
+    this.nextBarTime = nextStart;
+  }
+
+  // Speaks section `index`'s name on the next beat of the bar that started at `barStart`.
+  #announce(index, barStart) {
+    const sample = this.schedule.sections[index]?.cueSample;
+    const buffer = sample && this.buffers.get(sample);
+    if (!buffer) return;
+    const beatSec = this.schedule.barSec / this.song.meter[0];
+    const now = this.ctx.currentTime;
+    const at = barStart + Math.ceil((now + 0.02 - barStart) / beatSec) * beatSec;
+    this.#playOneShot(buffer, this.song.guide?.volumeDb ?? 0, at);
   }
 
   #scheduleBar(barTime) {
     for (const e of barEvents(this.schedule, this.state)) {
       const buffer = this.buffers.get(e.sample);
-      if (!buffer) continue;
-      const src = this.ctx.createBufferSource();
-      src.buffer = buffer;
-      const gain = this.ctx.createGain();
-      gain.gain.value = 10 ** (e.gainDb / 20);
-      src.connect(gain).connect(this.routing.clickGuide);
-      src.onended = () => {
-        this.sources.delete(src);
-        gain.disconnect();
-      };
-      this.sources.add(src);
-      src.start(barTime + e.offset);
+      if (buffer) this.#playOneShot(buffer, e.gainDb, barTime + e.offset);
     }
+  }
+
+  #playOneShot(buffer, gainDb, when) {
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    const gain = this.ctx.createGain();
+    gain.gain.value = dbToGain(gainDb);
+    src.connect(gain).connect(this.routing.clickGuide);
+    src.onended = () => {
+      this.sources.delete(src);
+      gain.disconnect();
+    };
+    this.sources.add(src);
+    src.start(when);
   }
 
   async #loadStems(song) {
@@ -190,21 +249,43 @@ export class Player {
     return warnings.sort();
   }
 
-  // Starts every loaded stem so that song time `songSec` plays at context time `when`.
-  #startStems(songSec, when) {
+  // Starts every loaded stem so that song time `songSec` plays at context time `when`,
+  // optionally fading in over 10 ms (at jump/loop seams).
+  #startStems(songSec, when, fadeIn) {
     const { delaySec, fileOffsetSec } = stemStart(songSec, this.song.stemOffsetMs);
+    const at = when + delaySec;
     for (const stem of this.song.stems) {
       const buffer = this.stemBuffers.get(`${this.song.id}/${stem.file}`);
-      const gain = this.stemGains.get(stem.file);
-      if (!buffer || !gain || fileOffsetSec >= buffer.duration) continue;
+      const stemGain = this.stemGains.get(stem.file);
+      if (!buffer || !stemGain || fileOffsetSec >= buffer.duration) continue;
       const src = this.ctx.createBufferSource();
       src.buffer = buffer;
-      src.connect(gain);
-      src.onended = () => this.sources.delete(src);
+      const gain = this.ctx.createGain();
+      if (fadeIn) {
+        gain.gain.setValueAtTime(0, at);
+        gain.gain.linearRampToValueAtTime(1, at + SEAM_FADE_SEC);
+      }
+      src.connect(gain).connect(stemGain);
+      src.onended = () => {
+        this.sources.delete(src);
+        gain.disconnect();
+      };
       this.sources.add(src);
-      this.stemSources.push(src);
-      src.start(when + delaySec, fileOffsetSec);
+      this.stemSegments.push({ src, gain });
+      src.start(at, fileOffsetSec);
     }
+  }
+
+  // At a jump/loop: fade the playing stems out over the 10 ms before `when`, then start them
+  // again from song time `songSec`.
+  #seamStems(when, songSec) {
+    for (const { src, gain } of this.stemSegments) {
+      gain.gain.setValueAtTime(1, when - SEAM_FADE_SEC);
+      gain.gain.linearRampToValueAtTime(0, when);
+      src.stop(when + SEAM_FADE_SEC);
+    }
+    this.stemSegments = [];
+    this.#startStems(songSec, when, true);
   }
 
   #animate() {
@@ -214,7 +295,11 @@ export class Player {
       const beats = this.song.meter[0];
       const beat = Math.min(beats, Math.floor(((now - current.start) / this.schedule.barSec) * beats) + 1);
       const fraction = (now - current.start) / this.schedule.barSec;
-      this.onPosition({ bar: current.bar, beat, fraction, countIn: current.bar < 1 });
+      const section = this.schedule.sections.findLastIndex((sec) => sec.startBar <= current.bar);
+      this.onPosition({
+        bar: current.bar, beat, fraction, countIn: current.bar < 1, section,
+        pendingJump: this.prev?.pendingJump ?? null, loop: this.prev?.loop ?? null,
+      });
     }
     this.frame = requestAnimationFrame(() => this.#animate());
   }
