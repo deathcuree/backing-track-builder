@@ -8,6 +8,8 @@ import { createControlBar } from './controlbar.js';
 import { createBrowser } from './browser.js';
 import { createArrangement } from './arrangement.js';
 import { createDetail } from './detail.js';
+import { createSession } from './session.js';
+import { createSetlists } from './setlists.js';
 import { Player } from './player.js';
 import { exportSong } from './export.js';
 import { esc, clock } from './ui.js';
@@ -31,6 +33,9 @@ async function start(catalog) {
   let songs = [];
   let selection = null; // { kind: 'track'|'cue'|'locator'|'tempo'|'meter', ref } or null (the song)
   let cursor = [1, 1, 1]; // insert marker [bar, beat, sixteenth]: where new things go and Play starts
+  let view = 'arrangement'; // or 'session' (Tab switches)
+  let position = null; // last playback position
+  let fitPending = false; // zoom-to-fit the arrangement once it is visible
   let loop = null; // loop brace { startBar, endBar } or null
   let loopOn = false;
   let grid = null; // last grid that could be built (kept while tempo/meter fields are being fixed)
@@ -44,12 +49,20 @@ async function start(catalog) {
 
   const player = new Player({
     onPosition: (pos) => {
-      arrangement.setPlayhead(pos ? pos.songSec : null, true);
+      position = pos;
+      arrangement.setPlayhead(pos ? pos.songSec : null, view === 'arrangement');
+      session.setPosition(pos);
       showPosition(pos);
     },
     onStateChange: (playing) => {
       controlbar.setPlaying(playing);
+      setlists.render(); // songs can only be switched while stopped
       if (!playing) setNote('');
+    },
+    onLoopReleased: () => {
+      loopOn = false;
+      controlbar.setLoop(false);
+      render();
     },
   });
   const controlbar = createControlBar($('controlbar'), {
@@ -62,6 +75,7 @@ async function start(catalog) {
       changed({ structural: selection?.kind === 'meter' });
     },
     onPlay: togglePlay,
+    onView: setView,
     onLoop: () => {
       loopOn = !loopOn;
       if (loopOn && !loop) loop = defaultLoop();
@@ -117,6 +131,30 @@ async function start(catalog) {
     },
     getPeaks: waveformFor,
   });
+  const session = createSession($('session'), {
+    onLaunch: launch,
+    onTrackChange: (track) => {
+      player.setTrack(track);
+      changed({ live: true, structural: selection?.ref === track });
+    },
+    onMasterChange: (key, db) => {
+      settings.mix[key] = db;
+      player.setMix({ [key]: db });
+      saveSettingsSoon();
+    },
+    onSelect: select,
+    getPeaks: waveformFor,
+  });
+  const setlists = createSetlists(browser.setlistsEl, {
+    api,
+    getSongs: () => songs,
+    getOpenSong: () => ({ id: song.id, saved: !isNew }),
+    isPlaying: () => player.playing,
+    onOpenSong: (id) => {
+      if (id !== song.id) whenSaved(async () => open(await api('GET', `/api/songs/${id}`), true));
+    },
+    showMessage: (text) => showStatusMessages([text]),
+  });
   const detail = createDetail($('detail'), {
     catalog,
     onChange: (path, { structural }) => {
@@ -131,6 +169,7 @@ async function start(catalog) {
   player.setMix(settings.mix);
   songs = await api('GET', '/api/songs');
   open(songs[0] ? await api('GET', `/api/songs/${songs[0].id}`) : newSong(), Boolean(songs[0]));
+  await setlists.enter();
 
   $('import-files').accept = STEM_EXTENSIONS.map((e) => `.${e}`).join(',');
   $('import-files').addEventListener('change', (e) => {
@@ -143,10 +182,17 @@ async function start(catalog) {
     if (i !== undefined) select(itemOfPath(errors[Number(i)].path));
     if (e.target.closest('[data-action="toggle-messages"]')) $('statusbar').classList.toggle('open');
   });
-  // Space play/stop · Delete removes the selection · Esc selects the song · +/− zoom
+  // Space play/stop · Tab Arrangement/Session · 1–9 launch section · L loop the section heard ·
+  // ←/→ previous/next setlist song (stopped) · Delete removes the selection · Esc selects the song ·
+  // +/− zoom
   document.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input, select, textarea')) return;
-    if (e.code === 'Space' && !e.target.closest('button')) togglePlay();
+    const digit = e.code.match(/^(?:Digit|Numpad)([1-9])$/);
+    if (e.key === 'Tab' && !e.shiftKey) setView(view === 'arrangement' ? 'session' : 'arrangement');
+    else if (digit) launch(Number(digit[1]) - 1);
+    else if (e.code === 'KeyL') toggleSectionLoop();
+    else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') setlists.step(e.code === 'ArrowLeft' ? -1 : 1);
+    else if (e.code === 'Space' && !e.target.closest('button')) togglePlay();
     else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelection();
     else if (e.key === 'Escape') select(null);
     else if (e.key === '+' || e.key === '=') arrangement.zoom(1.5);
@@ -173,8 +219,48 @@ async function start(catalog) {
     extraMessages = [];
     setNote('');
     changed({ structural: true });
-    arrangement.fit();
+    if (view === 'arrangement') arrangement.fit();
+    else fitPending = true;
     browser.renderSongs(songs, song.id);
+    setlists.render();
+  }
+
+  function setView(next) {
+    view = next;
+    $('arrangement').hidden = view !== 'arrangement';
+    $('session').hidden = view !== 'session';
+    controlbar.setView(view);
+    render();
+    if (view === 'arrangement' && fitPending) {
+      fitPending = false;
+      arrangement.fit();
+    }
+    session.setPosition(position);
+  }
+
+  // Locator sections of the song being edited, as the engine builds them.
+  function sections() {
+    const bars = [...song.locators].filter((l) => l.bar <= grid.bars.length).sort((a, b) => a.bar - b.bar);
+    return bars.map((l, i) => ({ name: l.name, startBar: l.bar, endBar: (bars[i + 1]?.bar ?? grid.bars.length + 1) - 1 }));
+  }
+
+  // Launch section `index`: jump there at the next bar line while playing, else start there.
+  function launch(index) {
+    if (player.playing) return player.jump(index);
+    const target = sections()[index];
+    if (target) startPlayback([target.startBar, 1, 1]);
+  }
+
+  // L: loop the section being heard (or at the start bar when stopped); L again releases it.
+  function toggleSectionLoop() {
+    if (loopOn) {
+      loopOn = false;
+    } else {
+      const bar = player.playing && position ? position.bar : cursor[0];
+      loop = sectionOf(bar) ?? defaultLoop();
+      loopOn = true;
+    }
+    applyLoop();
   }
 
   /**
@@ -206,6 +292,7 @@ async function start(catalog) {
 
   function render() {
     arrangement.render({ song, grid, selection, invalid: invalidItems(), cursor, mix: settings.mix, loop, loopOn });
+    if (view === 'session') session.render({ song, grid, sections: sections(), selection, mix: settings.mix });
     controlbar.render(song);
     if (!player.playing) showPosition(null);
     const dirty = isNew || isDirty();
@@ -229,13 +316,10 @@ async function start(catalog) {
     changed({ structural: true, live: true });
   }
 
-  // The locator section containing `bar` (from its locator to the bar before the next one).
+  // The locator section containing `bar`, or null before the first locator.
   function sectionOf(bar) {
-    const bars = song.locators.map((l) => l.bar).filter((b) => b <= grid.bars.length).sort((a, b) => a - b);
-    const start = bars.findLast((b) => b <= bar);
-    if (start === undefined) return null;
-    const next = bars.find((b) => b > start);
-    return { startBar: start, endBar: (next ?? grid.bars.length + 1) - 1 };
+    const found = sections().findLast((sec) => sec.startBar <= bar);
+    return found ? { startBar: found.startBar, endBar: found.endBar } : null;
   }
 
   // Loop brace when Loop is switched on without one: the section at the insert marker, else 4 bars.
@@ -415,8 +499,13 @@ async function start(catalog) {
     }
   }
 
-  async function togglePlay() {
+  function togglePlay() {
     if (player.playing) return player.stop();
+    return startPlayback(cursor);
+  }
+
+  /** @param {[number, number, number]} at where to start: the insert marker or a locator */
+  async function startPlayback(at) {
     if (errors.length) {
       setNote('Fix the problems in the song before playing.');
       return;
@@ -427,8 +516,8 @@ async function start(catalog) {
       warnings = loadWarnings;
       setNote('');
       renderStatus();
-      const bar = grid.bars[cursor[0] - 1];
-      await player.play({ fromBar: cursor[0], offsetSec: grid.secAt(cursor) - bar.startSec });
+      const bar = grid.bars[at[0] - 1];
+      await player.play({ fromBar: at[0], offsetSec: grid.secAt(at) - bar.startSec });
     } catch (err) {
       setNote(`Could not start playback: ${err.message}`);
     }
@@ -476,6 +565,7 @@ async function start(catalog) {
     note = '';
     songs = await api('GET', '/api/songs');
     browser.renderSongs(songs, song.id);
+    setlists.render();
     render();
     return true;
   }

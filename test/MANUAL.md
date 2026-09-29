@@ -202,3 +202,35 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
     every seam; song (main) intervals 0.4989–0.5011 s. Selecting the Intro locator set the brace to bars
     3–6; Loop off during bar 5 → playback continued 6→7→…→10.
   - Not yet done: a real mouse drag from the Browser in Chrome (step 4), and all steps by ear.
+
+## BTB-11: Session View and setlists
+
+1. **Switch views.** Press Tab (or the Arrangement / Session buttons): the Session View shows one
+   column per track (fader, M, output) with In-ears and Main master strips, and one row per locator
+   on the right. Tab again while playing: playback continues; the arrangement is where you left it.
+2. **Launch.** Stopped: click a section row (or press its number, 1–9): playback starts at that
+   locator. Playing: press another section: the row blinks and playback jumps there at the next bar
+   line; press it again before then to cancel.
+3. **Loop.** Press L: the section you hear loops (row outlined orange, Loop button on). L again
+   releases it. Jumping to another section also releases it.
+4. **Setlists.** Browser → Setlists → **+ New**, name it, open songs and **+ Add open song**. Reorder
+   with ↑/↓ (hover a song), remove with ✕. While stopped, ← / → open the previous / next song (with
+   the Save / Discard / Cancel prompt if there are unsaved changes); while playing they do nothing.
+   Reload: the same setlist is selected. **Delete setlist** asks "Really delete?" first.
+
+### Results
+- 2026-09-29 (automated, headless Brave via DevTools protocol, real key events; player output
+  recorded with a test-only tap on the audio destination):
+  - Step 1: Tab → Session with 3 columns and 2 rows (Intro 3–6, Verse 1 7–16); cells show "4/4 · 120",
+    "3/4 · 120" for the Click and ▶ where the song plays. Tab back while playing: still playing,
+    arrangement scrollLeft unchanged (120).
+  - Step 2: row 2 launched while stopped → 7. 3. 1 after 1.2 s; key 1 → Intro rows marked pending and
+    "Jumping to Intro at the next bar (press again to cancel)" → position 7→3; keys 2, 2 → cancelled
+    (3→4, "Playing Intro").
+  - Step 3: L → Loop on, "Looping Intro (press L to release)", bars 4→5→6→3→4→5; key 2 → 5→7 and the
+    Loop button turned off.
+  - Seams over the whole run: in-ear click intervals exactly 0.500 s (n 33); song (main) 0.4989–0.5011 s.
+  - Step 4: setlist "Sunday AM" with both songs; ← with unsaved changes → prompt → Discard → previous
+    song opened; → next song; ↑/↓ reorder saved; while playing → ignored and songs disabled; after a
+    reload the setlist is still selected; delete needed two clicks.
+  - Not yet done: a full rehearsal by ear on the user's laptop.

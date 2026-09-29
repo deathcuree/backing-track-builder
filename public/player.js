@@ -7,7 +7,7 @@
 // `prev` is the last scheduled bar (normally the one you hear); `state` is the next, not yet
 // scheduled bar. Audio clips play continuously; at a jump or loop they restart with a 10 ms
 // crossfade at the new position.
-import { buildSchedule, initialPlayState, nextPosition, barEvents, clipStart } from '/shared/schedule.js';
+import { buildSchedule, initialPlayState, nextPosition, barEvents, clipStart, sectionAt } from '/shared/schedule.js';
 import { createRouting, createTrackStrip } from './routing.js';
 
 const TIMER_MS = 25;
@@ -18,12 +18,15 @@ const SEAM_FADE_SEC = 0.01;
 export class Player {
   /**
    * @param {{ onPosition?: (pos: { bar: number, beat: number, sixteenth: number, fraction: number,
-   *             songSec: number } | null) => void,
-   *           onStateChange?: (playing: boolean) => void }} handlers
+   *             songSec: number, section: number, pendingJump: number|null,
+   *             loop: { startBar: number, endBar: number }|null } | null) => void,
+   *           onStateChange?: (playing: boolean) => void,
+   *           onLoopReleased?: () => void }} handlers onLoopReleased: a jump ended the loop
    */
-  constructor({ onPosition = () => {}, onStateChange = () => {} } = {}) {
+  constructor({ onPosition = () => {}, onStateChange = () => {}, onLoopReleased = () => {} } = {}) {
     this.onPosition = onPosition;
     this.onStateChange = onStateChange;
+    this.onLoopReleased = onLoopReleased;
     this.ctx = null;
     this.routing = null;
     this.buffers = new Map(); // sample path -> AudioBuffer (kept across songs; samples are small)
@@ -122,6 +125,21 @@ export class Player {
   }
 
   /**
+   * Jump to locator section `index` at the next bar line. The same section again cancels; another
+   * section replaces it. A jump releases the loop.
+   */
+  jump(index) {
+    if (!this.playing || !this.prev || !this.schedule.sections[index]) return;
+    this.prev = nextPosition(this.schedule, this.prev, { type: 'jump', section: index }).state;
+    this.#recomputeNext();
+  }
+
+  /** The loaded song's locator sections (for launching). */
+  get sections() {
+    return this.schedule?.sections ?? [];
+  }
+
+  /**
    * Starts `offsetSec` seconds into bar `fromBar` (0 = its downbeat), like Ableton playing from the
    * insert marker. The bar is scheduled as if it had started earlier; what lies before the start
    * point is skipped.
@@ -208,6 +226,10 @@ export class Player {
     this.endTime = null;
     this.state = next.state;
     this.seamNext = Boolean(next.jumped || next.looped);
+    if (next.jumped && this.loop) {
+      this.loop = null;
+      this.onLoopReleased();
+    }
     this.nextBarTime = this.startTime + this.state.elapsedSec;
   }
 
@@ -277,7 +299,12 @@ export class Player {
     if (current) {
       const bar = this.schedule.grid.bars[current.bar - 1];
       const songSec = bar.startSec + Math.min(bar.sec, now - current.start);
-      this.onPosition({ ...this.schedule.grid.positionAt(songSec), songSec });
+      this.onPosition({
+        ...this.schedule.grid.positionAt(songSec), songSec,
+        section: sectionAt(this.schedule, current.bar),
+        pendingJump: this.prev?.pendingJump ?? null,
+        loop: this.prev?.loop ?? null,
+      });
     }
     this.frame = requestAnimationFrame(() => this.#animate());
   }

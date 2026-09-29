@@ -9,6 +9,7 @@ const TAPS_AVERAGED = 4;
 /**
  * @param {HTMLElement} el
  * @param {{ onTempo: (bpm: number) => void, onMeter: (beats: number, unit: number) => void,
+ *           onView: (view: 'arrangement'|'session') => void,
  *           onPlay: () => void, onLoop: () => void, onGrid: (value: 'auto'|'bar'|number) => void, onZoom: (factor: number) => void, onImport: () => void,
  *           onExport: () => void, onSave: () => void }} handlers
  */
@@ -38,6 +39,10 @@ export function createControlBar(el, handlers) {
       <button id="cb-zoom-in" type="button" title="Zoom in (+)" aria-label="Zoom in">+</button>
     </div>
     <div class="cb-title" id="cb-title"></div>
+    <div class="cb-group cb-views" role="group" aria-label="View (Tab switches)">
+      <button id="cb-view-arrangement" type="button" aria-pressed="true" title="Arrangement View (Tab)">Arrangement</button>
+      <button id="cb-view-session" type="button" aria-pressed="false" title="Session View (Tab)">Session</button>
+    </div>
     <div class="cb-group">
       <button id="cb-import" type="button" title="Add audio files as new tracks">Import audio</button>
       <button id="cb-export" type="button">Export WAV</button>
@@ -55,6 +60,8 @@ export function createControlBar(el, handlers) {
   $('cb-tap').addEventListener('click', tap);
   $('cb-play').addEventListener('click', handlers.onPlay);
   $('cb-loop').addEventListener('click', handlers.onLoop);
+  $('cb-view-arrangement').addEventListener('click', () => handlers.onView('arrangement'));
+  $('cb-view-session').addEventListener('click', () => handlers.onView('session'));
   $('cb-grid').addEventListener('change', () => {
     const v = $('cb-grid').value;
     handlers.onGrid(v === 'auto' || v === 'bar' ? v : Number(v));
@@ -81,6 +88,10 @@ export function createControlBar(el, handlers) {
       $('cb-play').textContent = playing ? '■' : '▶';
       $('cb-play').setAttribute('aria-pressed', String(playing));
       $('cb-play').classList.toggle('on', playing);
+    },
+    setView(view) {
+      $('cb-view-arrangement').setAttribute('aria-pressed', String(view === 'arrangement'));
+      $('cb-view-session').setAttribute('aria-pressed', String(view === 'session'));
     },
     setLoop(on) {
       $('cb-loop').setAttribute('aria-pressed', String(on));

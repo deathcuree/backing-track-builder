@@ -1,4 +1,4 @@
-// Browser (left): the song library and the guide samples that can be placed on the Cues track,
+// Browser (left): the song library, the setlists (see setlists.js) and the guide samples that can be placed on the Cues track,
 // grouped like the sample pack (Sections, Dynamic cues, Counts) in the Cues track's language.
 import { esc, cueChoices, LANGUAGE_NAMES } from './ui.js';
 import { CUE_MIME } from './arrangement.js';
@@ -16,6 +16,7 @@ export function createBrowser(el, { catalog, onOpenSong, onNewSong, onAddCue }) 
       <div class="br-head"><h2>Songs</h2><button type="button" data-action="new-song" title="New song">+ New</button></div>
       <ul class="br-list" id="br-songs"></ul>
     </section>
+    <section class="br-section" id="br-setlists"></section>
     <section class="br-section br-cues">
       <div class="br-head"><h2>Cues</h2><span class="muted small" id="br-language"></span></div>
       <p class="muted small br-hint">Drag onto the Cues track, or click to add at the insert marker.</p>
@@ -38,6 +39,8 @@ export function createBrowser(el, { catalog, onOpenSong, onNewSong, onAddCue }) 
   });
 
   return {
+    /** Container for the setlists section. */
+    setlistsEl: el.querySelector('#br-setlists'),
     /** @param {{ id: string, title: string, bpm: number, meter: number[] }[]} songs */
     renderSongs(songs, currentId) {
       el.querySelector('#br-songs').innerHTML = songs.map((s) => `
