@@ -1,5 +1,5 @@
 // Detail panel (bottom): the fields of the selected item — the song itself when nothing is
-// selected, or a track, cue, locator, tempo marker or meter marker. Edits the song object in place
+// selected, or a track, audio clip, cue, locator, tempo marker or meter marker. Edits the song object in place
 // and reports every change; the app validates and redraws. Typing never re-renders the panel, so
 // focus is kept; structural changes (sorting markers, changing a cue's type) do.
 import { LIMITS, METER_UNITS, OUTPUTS, LANGUAGES, SUBDIVISIONS, CUE_TYPES } from '/shared/song.js';
@@ -45,8 +45,9 @@ export function createDetail(el, { catalog, onChange, onDelete }) {
   el.addEventListener('click', (e) => {
     const color = e.target.closest('[data-color]');
     if (color) {
-      selection.ref.color = Number(color.dataset.color);
-      return onChange(`${base}.color`, { structural: true });
+      const path = color.closest('[data-color-path]').dataset.colorPath;
+      setPath(song, path, Number(color.dataset.color));
+      return onChange(path, { structural: true });
     }
     if (e.target.closest('[data-action="delete"]')) onDelete();
   });
@@ -86,10 +87,11 @@ export function createDetail(el, { catalog, onChange, onDelete }) {
       return heading('Song', '') + row(
         field('Title', `<input id="d-title" data-path="title" type="text" maxlength="100" value="${esc(song.title)}">`, 'title', 'wide'),
         field('End bar', `<input id="d-end" data-path="endBar" data-type="number" type="number" min="1" max="${LIMITS.endBar[1]}" step="1" value="${esc(song.endBar)}">`, 'endBar'),
-      ) + '<p class="muted small">Select a track, cue, locator or marker to edit it. Click anywhere in the arrangement to place the insert marker: new cues, locators and markers go there, and Play starts there.</p>';
+      ) + '<p class="muted small">Select a track, clip, cue, locator or marker to edit it. Click anywhere in the arrangement to place the insert marker: new cues, locators and markers go there, and Play starts there.</p>';
     }
     const { kind, ref } = selection;
     if (kind === 'track') return trackPanel(ref, p);
+    if (kind === 'clip') return clipPanel(ref, p);
     if (kind === 'cue') {
       const choices = cueChoices(catalog, cuesLanguage(), ref.type);
       const keys = choices.some((c) => c.key === ref.key) ? choices : [{ key: ref.key, english: false }, ...choices];
@@ -125,13 +127,7 @@ export function createDetail(el, { catalog, onChange, onDelete }) {
   }
 
   function trackPanel(t, p) {
-    const common = [
-      field('Name', `<input id="d-name" data-path="${p('name')}" type="text" maxlength="${LIMITS.nameLength}" value="${esc(t.name)}" data-commit>`, p('name'), 'wide'),
-      field('Volume', `<span class="volume"><input id="d-vol" data-path="${p('volumeDb')}" data-type="number" type="range" min="${LIMITS.volumeDb[0]}" max="${LIMITS.volumeDb[1]}" step="1" value="${esc(t.volumeDb)}"><output for="d-vol">${formatDb(t.volumeDb)}</output></span>`, p('volumeDb')),
-      field('Mute', `<input id="d-mute" data-path="${p('muted')}" data-type="checkbox" type="checkbox" ${t.muted ? 'checked' : ''}>`, p('muted')),
-      field('Output', `<select id="d-output" data-path="${p('output')}">${options(OUTPUTS, t.output, (o) => OUTPUT_NAMES[o])}</select>`, p('output')),
-      field('Color', `<span class="swatches">${TRACK_COLORS.map((c, i) => `<button type="button" class="swatch" data-color="${i}" style="background:${c}" aria-label="Color ${i + 1}" aria-pressed="${t.color === i}"></button>`).join('')}</span>`, p('color'), 'wide'),
-    ];
+    const common = trackFields(t, p);
     if (t.type === 'click') {
       return heading('Click track', '') + row(...common,
         field('Sound', `<select id="d-sound" data-path="${p('sound')}">${options(Object.keys(catalog.clicks).sort(byName), t.sound)}</select>`, p('sound')),
@@ -143,10 +139,33 @@ export function createDetail(el, { catalog, onChange, onDelete }) {
         field('Language', `<select id="d-lang" data-path="${p('language')}" data-commit>${options(LANGUAGES, t.language, (l) => LANGUAGE_NAMES[l])}</select>`, p('language')),
       ) + '<p class="muted small">Add cues from the Browser. Missing recordings in this language play in English.</p>';
     }
-    return heading('Audio track', deleteButton('Remove track')) + row(...common,
-      field('File', `<input id="d-file" type="text" readonly value="${esc(t.clip?.file ?? '—')}">`, p('clip.file'), 'wide'),
-      t.clip ? field('Clip start (s)', `<input id="d-start" data-path="${p('clip.startSec')}" data-type="number" type="number" min="${LIMITS.clipStartSec[0]}" max="${LIMITS.clipStartSec[1]}" step="0.001" value="${esc(t.clip.startSec)}">`, p('clip.startSec')) : '',
-    ) + '<p class="muted small">Clip start is when the file\'s first sample plays, in seconds from bar 1 (negative skips the beginning). Line the song\'s first downbeat up with a bar.</p>';
+    return heading('Audio track', deleteButton('Remove track')) + row(...common)
+      + '<p class="muted small">Click a clip in the lane to edit it.</p>';
+  }
+
+  // Name, volume, mute, output and color: every track has them.
+  function trackFields(t, p) {
+    return [
+      field('Name', `<input id="d-name" data-path="${p('name')}" type="text" maxlength="${LIMITS.nameLength}" value="${esc(t.name)}" data-commit>`, p('name'), 'wide'),
+      field('Volume', `<span class="volume"><input id="d-vol" data-path="${p('volumeDb')}" data-type="number" type="range" min="${LIMITS.volumeDb[0]}" max="${LIMITS.volumeDb[1]}" step="1" value="${esc(t.volumeDb)}"><output for="d-vol">${formatDb(t.volumeDb)}</output></span>`, p('volumeDb')),
+      field('Mute', `<input id="d-mute" data-path="${p('muted')}" data-type="checkbox" type="checkbox" ${t.muted ? 'checked' : ''}>`, p('muted')),
+      field('Output', `<select id="d-output" data-path="${p('output')}">${options(OUTPUTS, t.output, (o) => OUTPUT_NAMES[o])}</select>`, p('output')),
+      field('Color', `<span class="swatches" data-color-path="${p('color')}">${TRACK_COLORS.map((c, i) => `<button type="button" class="swatch" data-color="${i}" style="background:${c}" aria-label="Color ${i + 1}" aria-pressed="${t.color === i}"></button>`).join('')}</span>`, p('color'), 'wide'),
+    ];
+  }
+
+  // An audio clip, then the fields of its track.
+  function clipPanel(clip, p) {
+    const i = song.tracks.findIndex((t) => t.type === 'audio' && t.clips.includes(clip));
+    const track = song.tracks[i];
+    const seconds = (sec) => (sec === null ? 'to end of file' : sec.toFixed(3));
+    return heading('Audio clip', deleteButton('Remove clip')) + row(
+      field('File', `<input id="d-file" type="text" readonly value="${esc(clip.file)}">`, p('file'), 'wide'),
+      field('Clip start (s)', `<input id="d-start" data-path="${p('startSec')}" data-type="number" type="number" min="${LIMITS.clipStartSec[0]}" max="${LIMITS.clipStartSec[1]}" step="0.001" value="${esc(clip.startSec)}">`, p('startSec')),
+      field('Starts in file (s)', `<input id="d-offset" type="text" readonly value="${seconds(clip.offsetSec)}">`, p('offsetSec')),
+      field('Length (s)', `<input id="d-length" type="text" readonly value="${seconds(clip.lengthSec)}">`, p('lengthSec')),
+    ) + '<p class="muted small">Clip start is when the clip\'s first sample plays, in seconds from bar 1 (negative skips the beginning). Line the song\'s first downbeat up with a bar.</p>'
+      + `<h3 class="detail-sub">Track: ${esc(track.name)}</h3>` + row(...trackFields(track, (suffix) => `tracks.${i}.${suffix}`));
   }
 
   function positionField(path, at) {
@@ -164,6 +183,10 @@ function pathOf(song, selection) {
   if (!selection) return '';
   const { kind, ref } = selection;
   if (kind === 'track') return `tracks.${song.tracks.indexOf(ref)}`;
+  if (kind === 'clip') {
+    const i = song.tracks.findIndex((t) => t.type === 'audio' && t.clips.includes(ref));
+    return `tracks.${i}.clips.${song.tracks[i].clips.indexOf(ref)}`;
+  }
   if (kind === 'cue') {
     const i = song.tracks.findIndex((t) => t.type === 'cues');
     return `tracks.${i}.clips.${song.tracks[i].clips.indexOf(ref)}`;

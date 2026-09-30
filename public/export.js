@@ -44,21 +44,29 @@ export async function renderSong(song, catalog) {
     src.start(t0 + e.t);
   }
 
+  // Each file is decoded once, however many clips use it.
+  const decoded = new Map();
+  const bufferOf = (file) => {
+    if (!decoded.has(file)) decoded.set(file, decode(ctx, `/api/songs/${song.id}/stems/${encodeURIComponent(file)}`));
+    return decoded.get(file);
+  };
+  const unreadable = new Set();
   await Promise.all(schedule.clips.filter((c) => audible(c.track)).map(async (clip) => {
     let buffer;
     try {
-      buffer = await decode(ctx, `/api/songs/${song.id}/stems/${encodeURIComponent(clip.file)}`);
+      buffer = await bufferOf(clip.file);
     } catch {
       const name = song.tracks.find((t) => t.id === clip.track)?.name ?? clip.file;
-      warnings.push(`Audio "${name}" could not be loaded; it is missing from the export.`);
+      if (!unreadable.has(name)) warnings.push(`Audio "${name}" could not be loaded; it is missing from the export.`);
+      unreadable.add(name);
       return;
     }
-    const { delaySec, fileOffsetSec } = clipStart(clip.startSec, 0);
-    if (fileOffsetSec >= buffer.duration) return;
+    const start = clipStart(clip, 0);
+    if (!start || start.fileOffsetSec >= buffer.duration) return;
     const src = ctx.createBufferSource();
     src.buffer = buffer;
     src.connect(strips.get(clip.track).input);
-    src.start(t0 + delaySec, fileOffsetSec);
+    src.start(t0 + start.delaySec, start.fileOffsetSec, start.durationSec ?? undefined);
   }));
 
   const rendered = await ctx.startRendering();

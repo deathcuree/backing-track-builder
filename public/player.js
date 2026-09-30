@@ -1,4 +1,4 @@
-// Live player: plays a version-2 song through Web Audio — the generated click, the cue clips and
+// Live player: plays a version-3 song through Web Audio — the generated click, the cue clips and
 // the audio clips — each through its track's strip (volume, mute, output; see routing.js).
 // A 25 ms timer schedules whole bars as they come within 150 ms of the audio clock. Which bar
 // comes next is decided by nextPosition (shared/schedule.js), and a bar starts at the start time
@@ -89,12 +89,13 @@ export class Player {
     }));
 
     this.keepAudio(song.id, this.schedule.clips.map((c) => c.file));
-    this.clipBuffers = new Map();
-    await Promise.all(this.schedule.clips.map(async (clip) => {
+    this.clipBuffers = new Map(); // file -> decoded audio; clips can share a file
+    const files = new Map(this.schedule.clips.map((c) => [c.file, c.track]));
+    await Promise.all([...files].map(async ([file, track]) => {
       try {
-        this.clipBuffers.set(clip.track, await this.audioBuffer(song.id, clip.file));
+        this.clipBuffers.set(file, await this.audioBuffer(song.id, file));
       } catch (err) {
-        const name = song.tracks.find((t) => t.id === clip.track)?.name ?? clip.file;
+        const name = song.tracks.find((t) => t.id === track)?.name ?? file;
         failed.push(`Audio "${name}" could not be loaded (${err.message || 'unsupported audio'}); playing without it.`);
       }
     }));
@@ -274,10 +275,11 @@ export class Player {
   // optionally fading in over 10 ms (at jump/loop seams).
   #startClips(songSec, when, fadeIn) {
     for (const clip of this.schedule.clips) {
-      const buffer = this.clipBuffers.get(clip.track);
+      const buffer = this.clipBuffers.get(clip.file);
       const strip = this.strips.get(clip.track);
-      const { delaySec, fileOffsetSec } = clipStart(clip.startSec, songSec);
-      if (!buffer || !strip || fileOffsetSec >= buffer.duration) continue;
+      const start = clipStart(clip, songSec);
+      if (!buffer || !strip || !start || start.fileOffsetSec >= buffer.duration) continue;
+      const { delaySec, fileOffsetSec, durationSec } = start;
       const at = when + delaySec;
       const src = this.ctx.createBufferSource();
       src.buffer = buffer;
@@ -293,7 +295,7 @@ export class Player {
       };
       this.sources.add(src);
       this.clipSegments.push({ src, gain });
-      src.start(at, fileOffsetSec);
+      src.start(at, fileOffsetSec, durationSec ?? undefined);
     }
   }
 

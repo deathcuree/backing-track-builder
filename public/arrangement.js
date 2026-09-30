@@ -11,8 +11,8 @@
 // Cmd/Ctrl for sixteenths): new cues, locators and markers go there and Play starts there.
 // Dragging only moves the element on screen; the song changes once, when you let go (onMove), so a
 // drag is one edit. Cues snap to the grid (hold Cmd/Ctrl for sixteenths), locators and markers to
-// bars, audio clips move freely.
-import { OUTPUTS, LIMITS } from '/shared/song.js';
+// bars, audio clips move freely but not over another clip on their track.
+import { OUTPUTS, LIMITS, clipEnd } from '/shared/song.js';
 import { autoStep } from '/shared/grid.js';
 import { peakRange } from '/shared/waveform.js';
 import { esc, options, formatDb, clock, TRACK_COLORS, OUTPUT_NAMES } from './ui.js';
@@ -38,9 +38,10 @@ export const CUE_MIME = 'application/x-btb-cue'; // Browser cue being dragged: J
  *           onAdd: (kind: 'locator'|'tempo'|'meter') => void,
  *           onAddAt: (kind: 'locator'|'tempo'|'meter', bar: number) => void,
  *           onMove: (kind: string, ref: object, value: number[]|number) => void,
+ *           clipFits: (clip: object, startSec: number) => boolean,
  *           onDropCue: (cue: { type: string, key: string }, at: number[]) => void,
  *           onLoopRange: (range: { startBar: number, endBar: number }) => void,
- *           getPeaks: (track: object) => { peaks: object, sampleRate: number, duration: number } | null }} handlers
+ *           getPeaks: (file: string) => { peaks: object, sampleRate: number, duration: number } | null }} handlers
  */
 export function createArrangement(el, handlers) {
   el.innerHTML = `
@@ -123,7 +124,7 @@ export function createArrangement(el, handlers) {
     }
     const item = e.target.closest('[data-kind]');
     if (item) {
-      const ref = item.dataset.kind === 'track' ? trackById(item.dataset.track) : refs[item.dataset.kind]?.[item.dataset.i];
+      const ref = refOf(item);
       return handlers.onSelect(ref ? { kind: item.dataset.kind, ref } : null);
     }
     if (e.target.closest('.hdr-mixer, .hdr-master, .hdr-strip')) return;
@@ -143,7 +144,7 @@ export function createArrangement(el, handlers) {
     const item = e.target.closest('.cue, .loc, .mk, .clip');
     if (!item) return;
     const kind = item.dataset.kind;
-    const ref = kind === 'track' ? trackById(item.dataset.track) : refs[kind]?.[item.dataset.i];
+    const ref = refOf(item);
     if (!ref || ((kind === 'tempo' || kind === 'meter') && view.song[kind][0] === ref)) return; // bar-1 markers stay
     drag = { kind, ref, item, startX: e.clientX, left: parseFloat(item.style.left), moved: false, value: null };
     item.setPointerCapture(e.pointerId);
@@ -169,11 +170,12 @@ export function createArrangement(el, handlers) {
       drag.value = sec < 0 || sec >= grid.endSec ? null : grid.snap(sec, e.metaKey || e.ctrlKey ? 1 : stepAt(sec));
       x = drag.value ? grid.secAt(drag.value) * pps : drag.left + dx;
       label = drag.value ? drag.value.join('.') : 'outside the song';
-    } else if (drag.kind === 'track') {
+    } else if (drag.kind === 'clip') {
       const [min, max] = LIMITS.clipStartSec;
-      drag.value = Math.round(Math.min(max, Math.max(min, sec)) * 1000) / 1000;
-      x = drag.value * pps;
-      label = `starts at ${clock(drag.value, true)}`;
+      const startSec = Math.round(Math.min(max, Math.max(min, sec)) * 1000) / 1000;
+      drag.value = handlers.clipFits(drag.ref, startSec) ? startSec : null;
+      x = startSec * pps;
+      label = drag.value === null ? 'over another clip' : `starts at ${clock(startSec, true)}`;
     } else {
       drag.value = sec < 0 || sec >= grid.endSec ? null : grid.nearestBar(sec);
       x = drag.value ? barX(drag.value) : drag.left + dx;
@@ -211,7 +213,7 @@ export function createArrangement(el, handlers) {
     handlers.onAddAt(lane.dataset.lane, view.grid.positionAt(sec).bar);
   });
 
-  // Audio files dropped on the arrangement: new tracks, or into an audio lane that has no clip.
+  // Audio files dropped on the arrangement: new tracks, or into an audio lane that has no clips.
   el.addEventListener('dragover', (e) => {
     if (!e.dataTransfer?.types.includes('Files')) return;
     e.preventDefault();
@@ -224,7 +226,7 @@ export function createArrangement(el, handlers) {
     el.classList.remove('file-over');
     const lane = e.target.closest('.track-audio');
     const track = lane ? trackById(lane.dataset.track) : null;
-    handlers.onDropFiles([...e.dataTransfer.files], track && !track.clip ? track : null);
+    handlers.onDropFiles([...e.dataTransfer.files], track && !track.clips.length ? track : null);
   });
   el.addEventListener('dragleave', (e) => {
     if (!el.contains(e.relatedTarget)) el.classList.remove('file-over');
@@ -417,6 +419,14 @@ export function createArrangement(el, handlers) {
     return view.grid.snap(sec, event.metaKey || event.ctrlKey ? 1 : stepAt(sec));
   }
 
+  // The song object a clickable item stands for (audio clips are numbered within their track).
+  function refOf(item) {
+    const { kind, track, i } = item.dataset;
+    if (kind === 'track') return trackById(track);
+    if (kind === 'clip') return trackById(track)?.clips[i];
+    return refs[kind]?.[i];
+  }
+
   function trackById(id) {
     return view?.song.tracks.find((t) => t.id === id);
   }
@@ -484,7 +494,7 @@ export function createArrangement(el, handlers) {
     row.classList.toggle('muted-track', t.muted);
     const items = row.querySelector('.items');
     if (t.type === 'cues') items.innerHTML = cueItems(t);
-    else if (t.type === 'audio') items.innerHTML = clipItem(t);
+    else if (t.type === 'audio') items.innerHTML = clipItems(t);
     else items.innerHTML = '';
   }
 
@@ -514,13 +524,16 @@ export function createArrangement(el, handlers) {
     }
   }
 
-  function clipItem(track) {
-    if (!track.clip) return '<span class="lane-hint muted small">No audio. Drop a file here or use Import audio.</span>';
-    const info = handlers.getPeaks(track);
-    const width = info ? info.duration * pps : 120;
-    return `<div class="${classes(track.clip, 'clip')}" data-kind="track" data-track="${esc(track.id)}"
-      style="left:${track.clip.startSec * pps}px;width:${width}px" title="${esc(track.clip.file)} at ${clock(track.clip.startSec, true)}">
-      <span class="clip-title">${esc(track.name)}${info ? '' : ' · loading…'}</span></div>`;
+  function clipItems(track) {
+    if (!track.clips.length) return '<span class="lane-hint muted small">No audio. Drop a file here or use Import audio.</span>';
+    return track.clips.map((c, i) => {
+      const info = handlers.getPeaks(c.file);
+      const end = clipEnd(c, info?.duration ?? null);
+      const width = end === null ? 120 : Math.max(1, (end - c.startSec) * pps);
+      return `<div class="${classes(c, 'clip')}" data-kind="clip" data-track="${esc(track.id)}" data-i="${i}"
+        style="left:${c.startSec * pps}px;width:${width}px" title="${esc(c.file)} at ${clock(c.startSec, true)}">
+        <span class="clip-title">${esc(track.name)}${info ? '' : ' · loading…'}</span></div>`;
+    }).join('');
   }
 
   function placePlayhead() {
@@ -637,24 +650,26 @@ export function createArrangement(el, handlers) {
   }
 
   function drawWaveform(g, track, left, width, height) {
-    const info = track.clip && handlers.getPeaks(track);
-    if (!info) return;
-    const { peaks, sampleRate } = info;
-    const x0 = track.clip.startSec * pps;
-    const from = Math.max(Math.floor(x0), Math.floor(left));
-    const to = Math.min(Math.ceil(x0 + info.duration * pps), Math.ceil(left + width));
     const top = CLIP_TITLE_PX + 2;
     const mid = top + (height - top) / 2;
     const half = (height - top) / 2 - 2;
-    const perPx = sampleRate / peaks.bucketSize / pps; // buckets per pixel
     g.fillStyle = getComputedStyle(el).getPropertyValue('--wave');
-    for (let x = from; x < to; x++) {
-      const b0 = (x / pps - track.clip.startSec) * sampleRate / peaks.bucketSize;
-      const p = peakRange(peaks, b0, b0 + Math.max(perPx, 1));
-      if (!p) continue;
-      const y0 = mid - p.max * half;
-      const y1 = mid - p.min * half;
-      g.fillRect(x, y0, 1, Math.max(1, y1 - y0));
+    for (const clip of track.clips) {
+      const info = handlers.getPeaks(clip.file);
+      if (!info) continue;
+      const { peaks, sampleRate } = info;
+      const x0 = clip.startSec * pps;
+      const from = Math.max(Math.floor(x0), Math.floor(left));
+      const to = Math.min(Math.ceil(clipEnd(clip, info.duration) * pps), Math.ceil(left + width));
+      const perPx = sampleRate / peaks.bucketSize / pps; // buckets per pixel
+      for (let x = from; x < to; x++) {
+        const b0 = (x / pps - clip.startSec + clip.offsetSec) * sampleRate / peaks.bucketSize;
+        const p = peakRange(peaks, b0, b0 + Math.max(perPx, 1));
+        if (!p) continue;
+        const y0 = mid - p.max * half;
+        const y1 = mid - p.min * half;
+        g.fillRect(x, y0, 1, Math.max(1, y1 - y0));
+      }
     }
   }
 }

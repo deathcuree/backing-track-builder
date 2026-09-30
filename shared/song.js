@@ -1,10 +1,13 @@
-// Song model, version 2: tracks, clips, locators and tempo/meter markers placed by hand, as in
+// Song model, version 3: tracks, clips, locators and tempo/meter markers placed by hand, as in
 // Ableton's Arrangement View. Defaults and validation are shared by the editor (inline errors) and
 // the server (refuses to save invalid songs). Fallback problems such as missing samples are not
 // errors here; buildSchedule reports those as warnings and the song still saves.
 //
 // Positions are [bar, beat, sixteenth] (see shared/grid.js). Audio clips are placed in song seconds
-// (bar 1 = 0 s) and are never time-stretched.
+// (bar 1 = 0 s) and are never time-stretched. An audio track holds a list of clips, each a window
+// onto an uploaded file: { file, startSec, offsetSec, lengthSec } plays `file` from `offsetSec` for
+// `lengthSec` seconds (null = to the end of the file), starting at song time `startSec`. Version 2
+// had one whole-file clip per track; upgradeSong converts it.
 
 /** Song and setlist ids: lowercase letters, digits and dashes (see slugify). */
 export const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -14,6 +17,9 @@ export const STEM_EXTENSIONS = ['wav', 'mp3', 'm4a', 'flac', 'ogg']; // formats 
 export const OUTPUTS = ['inEars', 'main', 'both'];
 export const CUE_TYPES = ['section', 'cue', 'count'];
 export const METER_UNITS = [4, 8];
+// Clips that meet within this much are touching, not overlapping (floating-point dust).
+const SEAM_TOLERANCE_SEC = 1e-6;
+
 export const LIMITS = {
   bpm: [40, 240],
   beats: [1, 16],
@@ -25,11 +31,12 @@ export const LIMITS = {
   locators: 99,
   audioTracks: 32,
   cueClips: 2000,
+  audioClips: 2000,
 };
 
 export function newSong() {
   return {
-    version: 2,
+    version: 3,
     id: '',
     title: 'New song',
     endBar: 16,
@@ -54,7 +61,7 @@ export function validateSong(song) {
     return errors;
   }
 
-  if (song.version !== 2) fail('version', 'This song was made with an older version of the app.');
+  if (song.version !== 3) fail('version', 'This song was made with an older version of the app.');
   if (typeof song.title !== 'string' || !song.title.trim()) fail('title', 'Give the song a title.');
   const endBarOk = isInt(song.endBar, LIMITS.endBar);
   if (!endBarOk) fail('endBar', `The song end must be a bar from 1 to ${LIMITS.endBar[1]}.`);
@@ -104,7 +111,6 @@ export function validateSong(song) {
     return errors;
   }
   const ids = new Set();
-  const files = new Set();
   const count = { click: 0, cues: 0, audio: 0 };
   song.tracks.forEach((t, i) => {
     const path = `tracks[${i}]`;
@@ -138,21 +144,41 @@ export function validateSong(song) {
           if (typeof c.key !== 'string' || !c.key) fail(`${cp}.key`, 'Pick a cue.');
         });
       }
-    } else if (t.clip !== null) {
-      if (!isObject(t.clip)) return fail(`${path}.clip`, 'Audio clip must be empty or an object.');
-      const { file, startSec } = t.clip;
-      if (typeof file !== 'string' || sanitizeStemName(file) !== file || files.has(file)) {
-        fail(`${path}.clip.file`, 'Audio file name is not valid or is used twice.');
-      }
-      files.add(file);
-      if (!inRange(startSec, LIMITS.clipStartSec)) {
-        fail(`${path}.clip.startSec`, `Clip start must be within ${LIMITS.clipStartSec[1]} seconds of bar 1.`);
-      }
+    } else if (!Array.isArray(t.clips) || t.clips.length > LIMITS.audioClips) {
+      fail(`${path}.clips`, `An audio track holds up to ${LIMITS.audioClips} clips.`);
+    } else {
+      checkAudioClips(t.clips, `${path}.clips`, fail);
     }
   });
   if (count.click !== 1 || count.cues !== 1) fail('tracks', 'A song needs exactly one Click track and one Cues track.');
   if (count.audio > LIMITS.audioTracks) fail('tracks', `A song can have up to ${LIMITS.audioTracks} audio tracks.`);
   return errors;
+}
+
+/**
+ * A version-2 song (one `clip` per audio track) as a version-3 copy that plays the same; any other
+ * value is returned as it is.
+ */
+export function upgradeSong(song) {
+  if (!isObject(song) || song.version !== 2 || !Array.isArray(song.tracks)) return song;
+  return {
+    ...song,
+    version: 3,
+    tracks: song.tracks.map((t) => {
+      if (!isObject(t) || t.type !== 'audio') return t;
+      const { clip, ...rest } = t;
+      return { ...rest, clips: clip ? [{ file: clip.file, startSec: clip.startSec, offsetSec: 0, lengthSec: null }] : [] };
+    }),
+  };
+}
+
+/**
+ * Song time (seconds) where an audio clip stops playing. `fileSec` is the file's length; without it
+ * the end of a clip that runs to the end of its file is unknown (null).
+ */
+export function clipEnd(clip, fileSec) {
+  if (clip.lengthSec !== null) return clip.startSec + clip.lengthSec;
+  return fileSec === null || fileSec === undefined ? null : clip.startSec + fileSec - clip.offsetSec;
 }
 
 /** "Él Shaddai (Live)" -> "el-shaddai-live"; always matches the server's id pattern. */
@@ -192,6 +218,44 @@ export function sanitizeStemName(fileName) {
     .slice(0, 90)
     .replace(/[ .]+$/, '');
   return name ? `${name}.${m[2]}` : null;
+}
+
+// Clips of one audio track: valid fields, no two overlapping (ends may touch), and only the last
+// may run to the end of its file (its end is unknown without decoding the audio).
+function checkAudioClips(clips, path, fail) {
+  const placed = [];
+  clips.forEach((c, j) => {
+    const cp = `${path}[${j}]`;
+    if (!isObject(c)) return fail(cp, 'Audio clip must be an object.');
+    let ok = true;
+    if (typeof c.file !== 'string' || sanitizeStemName(c.file) !== c.file) {
+      ok = false;
+      fail(`${cp}.file`, 'Audio file name is not valid.');
+    }
+    if (!inRange(c.startSec, LIMITS.clipStartSec)) {
+      ok = false;
+      fail(`${cp}.startSec`, `Clip start must be within ${LIMITS.clipStartSec[1]} seconds of bar 1.`);
+    }
+    if (!(typeof c.offsetSec === 'number' && Number.isFinite(c.offsetSec) && c.offsetSec >= 0)) {
+      ok = false;
+      fail(`${cp}.offsetSec`, 'Where the clip starts in its file must be 0 seconds or more.');
+    }
+    if (c.lengthSec !== null && !(typeof c.lengthSec === 'number' && Number.isFinite(c.lengthSec) && c.lengthSec > 0)) {
+      ok = false;
+      fail(`${cp}.lengthSec`, 'Clip length must be more than 0 seconds, or run to the end of the file.');
+    }
+    if (ok) placed.push({ c, cp });
+  });
+  placed.sort((a, b) => a.c.startSec - b.c.startSec);
+  placed.forEach(({ c, cp }, k) => {
+    const next = placed[k + 1];
+    if (!next) return;
+    if (c.lengthSec === null) {
+      fail(`${cp}.lengthSec`, 'Only the last clip on a track can run to the end of its file.');
+    } else if (c.startSec + c.lengthSec > next.c.startSec + SEAM_TOLERANCE_SEC) {
+      fail(`${next.cp}.startSec`, 'This clip overlaps another clip on the track.');
+    }
+  });
 }
 
 // Markers: a non-empty list, first at bar 1, strictly increasing bars inside the song.

@@ -2,7 +2,7 @@
 // bottom, the In-ears and Main master strips, and one launch row per locator on the right (like
 // scenes). Launching a row while stopped starts playback at that locator; while playing it jumps
 // there at the next bar line (again cancels). Cells show what each track has in that section.
-import { OUTPUTS, LIMITS } from '/shared/song.js';
+import { OUTPUTS, LIMITS, clipEnd } from '/shared/song.js';
 import { esc, options, formatDb, TRACK_COLORS, OUTPUT_NAMES } from './ui.js';
 
 /**
@@ -12,7 +12,7 @@ import { esc, options, formatDb, TRACK_COLORS, OUTPUT_NAMES } from './ui.js';
  *           onSolo: (track: object, additive: boolean) => void,
  *           onMasterChange: (key: 'inEarsDb'|'mainDb', db: number) => void,
  *           onSelect: (sel: { kind: string, ref: object } | null) => void,
- *           getPeaks: (track: object) => { duration: number } | null }} handlers
+ *           getPeaks: (file: string) => { duration: number } | null }} handlers
  */
 export function createSession(el, handlers) {
   el.innerHTML = `
@@ -66,7 +66,7 @@ export function createSession(el, handlers) {
       const { song, sections } = next;
       // Rebuild only when the columns or rows change, so a fader being dragged is never replaced.
       const sig = JSON.stringify([song.tracks.map((t) => [t.id, t.name, t.color]), sections.map((s) => [s.name, s.startBar, s.endBar]),
-        song.tracks.find((t) => t.type === 'cues')?.clips.map((c) => [c.at, c.key]), song.tracks.map((t) => t.clip && [t.clip.startSec, Boolean(handlers.getPeaks(t))]),
+        song.tracks.find((t) => t.type === 'cues')?.clips.map((c) => [c.at, c.key]), song.tracks.map((t) => t.type === 'audio' && t.clips.map((c) => [c.startSec, c.offsetSec, c.lengthSec, Boolean(handlers.getPeaks(c.file))])),
         song.tempo, song.meter]);
       if (sig !== signature) {
         signature = sig;
@@ -154,12 +154,11 @@ export function createSession(el, handlers) {
         .sort((a, b) => a.at[0] - b.at[0] || a.at[1] - b.at[1] || a.at[2] - b.at[2]).map((c) => c.key);
       return keys.length ? keys.join(', ') : null;
     }
-    if (!t.clip) return null;
     const from = grid.bars[s.startBar - 1]?.startSec;
     const last = grid.bars[s.endBar - 1];
     if (from === undefined || !last) return null;
-    const duration = handlers.getPeaks(t)?.duration ?? Infinity;
-    const plays = t.clip.startSec < last.startSec + last.sec && t.clip.startSec + duration > from;
+    const plays = t.clips.some((c) => c.startSec < last.startSec + last.sec
+      && (clipEnd(c, handlers.getPeaks(c.file)?.duration ?? null) ?? Infinity) > from);
     return plays ? '▶' : null;
   }
 

@@ -153,13 +153,19 @@ describe('buildSchedule: cues', () => {
 });
 
 describe('buildSchedule: clips and sections', () => {
-  test('audio clips are listed per track', () => {
+  test('every audio clip is listed with its track and its window of the file', () => {
     const s = song();
     s.tracks.push(
-      { id: 'a1', type: 'audio', name: 'Song', color: 2, volumeDb: 0, muted: false, output: 'both', clip: { file: 'Song.wav', startSec: 3.214 } },
-      { id: 'a2', type: 'audio', name: 'Empty', color: 3, volumeDb: 0, muted: false, output: 'both', clip: null },
+      { id: 'a1', type: 'audio', name: 'Song', color: 2, volumeDb: 0, muted: false, output: 'both', clips: [
+        { file: 'Song.wav', startSec: 3.214, offsetSec: 0, lengthSec: 8 },
+        { file: 'Song.wav', startSec: 20, offsetSec: 16.786, lengthSec: null },
+      ] },
+      { id: 'a2', type: 'audio', name: 'Empty', color: 3, volumeDb: 0, muted: false, output: 'both', clips: [] },
     );
-    assert.deepEqual(buildSchedule(s, catalog).clips, [{ track: 'a1', file: 'Song.wav', startSec: 3.214 }]);
+    assert.deepEqual(buildSchedule(s, catalog).clips, [
+      { track: 'a1', file: 'Song.wav', startSec: 3.214, offsetSec: 0, lengthSec: 8 },
+      { track: 'a1', file: 'Song.wav', startSec: 20, offsetSec: 16.786, lengthSec: null },
+    ]);
   });
 
   test('locators become sections, sorted, each ending before the next or at the end bar', () => {
@@ -297,9 +303,29 @@ describe('live transitions', () => {
 });
 
 describe('clipStart', () => {
-  test('spec examples', () => {
-    assert.deepEqual(clipStart(3.214, 0), { delaySec: 3.214, fileOffsetSec: 0 });
-    assert.deepEqual(clipStart(3.214, 10), { delaySec: 0, fileOffsetSec: 6.786 });
-    assert.deepEqual(clipStart(-2, 0), { delaySec: 0, fileOffsetSec: 2 });
+  const open = (startSec, offsetSec = 0) => ({ startSec, offsetSec, lengthSec: null });
+  const window = (startSec, offsetSec, lengthSec) => ({ startSec, offsetSec, lengthSec });
+
+  test('a whole-file clip: wait for it, or start part-way into the file', () => {
+    assert.deepEqual(clipStart(open(3.214), 0), { delaySec: 3.214, fileOffsetSec: 0, durationSec: null });
+    assert.deepEqual(clipStart(open(3.214), 10), { delaySec: 0, fileOffsetSec: 6.786, durationSec: null });
+    assert.deepEqual(clipStart(open(-2), 0), { delaySec: 0, fileOffsetSec: 2, durationSec: null });
+  });
+
+  test('a clip that starts later in its file plays from there', () => {
+    assert.deepEqual(clipStart(open(10, 8), 0), { delaySec: 10, fileOffsetSec: 8, durationSec: null });
+    assert.deepEqual(clipStart(open(10, 8), 12.5), { delaySec: 0, fileOffsetSec: 10.5, durationSec: null });
+  });
+
+  test('a clip with a length plays only what is left of it', () => {
+    // song 10–182 s plays file 8–180 s
+    assert.deepEqual(clipStart(window(10, 8, 172), 0), { delaySec: 10, fileOffsetSec: 8, durationSec: 172 });
+    assert.deepEqual(clipStart(window(10, 8, 172), 20), { delaySec: 0, fileOffsetSec: 18, durationSec: 162 });
+    assert.deepEqual(clipStart(window(-2, 5, 10), 0), { delaySec: 0, fileOffsetSec: 7, durationSec: 8 });
+  });
+
+  test('nothing to play once a clip with a length has ended', () => {
+    assert.equal(clipStart(window(10, 8, 172), 182), null);
+    assert.equal(clipStart(window(10, 8, 172), 190), null);
   });
 });
