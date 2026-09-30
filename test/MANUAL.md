@@ -337,3 +337,39 @@ such as `{ "file": "Band.wav", "startSec": 0, "offsetSec": 0, "lengthSec": 5 }` 
   - Step 6: ▶ ▶ for Intro and Verse. No console errors.
   - Not checked by ear.
 
+
+## BTB-14b: Split audio clips (Cmd/Ctrl+E)
+
+Setup: a song with an audio track (a stem or a full mix).
+
+1. **Split.** Click inside the clip where you want to cut (the insert marker moves there, snapped to the
+   grid; hold Cmd/Ctrl for sixteenths) and press Cmd/Ctrl+E. There are now two clips meeting at the
+   marker, the right one selected: its panel shows the new Clip start, Starts in file and Length. Play
+   across the cut: it sounds exactly as before.
+2. **Undo/redo.** Cmd/Ctrl+Z puts the single clip back; Cmd/Ctrl+Shift+Z splits it again.
+3. **Cut out a part.** Split at the start and end of a part and Delete the middle clip: that stretch is
+   silent when you play from bar 1, launch or loop a section across it, and in Export WAV.
+4. **Can't split.** Cmd/Ctrl+E with nothing or a track name selected → "Select an audio clip to split it.";
+   with the marker outside the selected clip → "Place the insert marker inside the clip to split it.";
+   right after opening a song, before the audio has loaded → "The audio is still loading; try again in a
+   moment."; on a clip whose file can't be decoded → "This clip's audio could not be read." The song
+   doesn't change.
+5. **Keys.** Cmd/Ctrl+E while typing in a field does nothing; Cmd/Ctrl+S still saves.
+
+### Results
+- 2026-09-30: `npm test` 154 passing (new: splitClip, including the spec example, clips with a window,
+  clips before bar 1, the pieces meeting exactly and validating, refusals within 1 ms of the edges, past
+  the audio, and when the file length is unknown). App run against a temporary data folder (20 s test WAV,
+  plus an undecodable "Bad.wav"), driven in headless Chrome for Testing via the DevTools protocol with
+  real mouse and key events:
+  - Step 1: click at ~5.2 s snapped to 5 s (3.3.1); Cmd+E → clips 0–5 s and 5–20 s, right one
+    selected (Clip start 5, Starts in file 5.000, Length 15.000). A second split at 8 s → 5–8 s and 8–20 s.
+  - Step 2: Cmd+Z → 1 clip, Cmd+Shift+Z → 2.
+  - Step 3 (audio source starts recorded in the page): with the 0–5 s clip deleted, Play from bar 1 →
+    file 5 s for 3 s at +5 s, then file 8 s for 12 s at +8 s. Launch Verse (6 s) → file 6 s for 2 s at once,
+    then file 8 s at +2 s. Split at 6 s while playing, saved, exported: 3 starts (5 s/1 s, 6 s/2 s,
+    8 s/12 s) exactly as saved.
+  - Step 4: all four notes as listed, the clip count unchanged each time (the "still loading" case with
+    decoding slowed down on purpose).
+  - Step 5: Cmd+E with the Clip start field focused → no split; Cmd+S → saved with the clips as shown.
+  - No console errors. Not checked by ear.

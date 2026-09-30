@@ -164,7 +164,7 @@ export function createDetail(el, { catalog, onChange, onDelete }) {
       field('Clip start (s)', `<input id="d-start" data-path="${p('startSec')}" data-type="number" type="number" min="${LIMITS.clipStartSec[0]}" max="${LIMITS.clipStartSec[1]}" step="0.001" value="${esc(clip.startSec)}">`, p('startSec')),
       field('Starts in file (s)', `<input id="d-offset" type="text" readonly value="${seconds(clip.offsetSec)}">`, p('offsetSec')),
       field('Length (s)', `<input id="d-length" type="text" readonly value="${seconds(clip.lengthSec)}">`, p('lengthSec')),
-    ) + '<p class="muted small">Clip start is when the clip\'s first sample plays, in seconds from bar 1 (negative skips the beginning). Line the song\'s first downbeat up with a bar.</p>'
+    ) + '<p class="muted small">Clip start is when the clip\'s first sample plays, in seconds from bar 1 (negative skips the beginning). Line the song\'s first downbeat up with a bar. To split the clip, click where to cut and press Cmd/Ctrl+E.</p>'
       + `<h3 class="detail-sub">Track: ${esc(track.name)}</h3>` + row(...trackFields(track, (suffix) => `tracks.${i}.${suffix}`));
   }
 

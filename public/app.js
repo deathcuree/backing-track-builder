@@ -1,6 +1,6 @@
 // App shell: loads the catalog and songs, owns the open song, the selection and the start bar,
 // and connects the Control Bar, Browser, Arrangement, Detail panel, player and export.
-import { newSong, validateSong, clipEnd, uniqueId, sanitizeStemName, STEM_EXTENSIONS, LIMITS } from '/shared/song.js';
+import { newSong, validateSong, clipEnd, splitClip, uniqueId, sanitizeStemName, STEM_EXTENSIONS, LIMITS } from '/shared/song.js';
 import { buildGrid } from '/shared/grid.js';
 import { buildSchedule } from '/shared/schedule.js';
 import { peaks } from '/shared/waveform.js';
@@ -18,6 +18,12 @@ import { esc, clock } from './ui.js';
 const $ = (id) => document.getElementById(id);
 const PEAK_BUCKET = 256; // samples per waveform bucket (~170 per second at 44.1 kHz)
 const AUDIO_TRACK_COLORS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+const SPLIT_NOTES = {
+  select: 'Select an audio clip to split it.',
+  outside: 'Place the insert marker inside the clip to split it.',
+  loading: 'The audio is still loading; try again in a moment.',
+  unreadable: "This clip's audio could not be read.",
+};
 
 const catalogRes = await fetch('/samples/catalog.json').catch(() => null);
 if (!catalogRes?.ok) {
@@ -135,6 +141,7 @@ async function start(catalog) {
       applyLoop();
     },
     getPeaks: waveformFor,
+    unreadable,
   });
   const session = createSession($('session'), {
     onLaunch: launch,
@@ -186,8 +193,8 @@ async function start(catalog) {
     if (i !== undefined) select(itemOfPath(errors[Number(i)].path));
     if (e.target.closest('[data-action="toggle-messages"]')) $('statusbar').classList.toggle('open');
   });
-  // Cmd/Ctrl+S save · Cmd/Ctrl+Z undo · Cmd/Ctrl+Shift+Z (or Ctrl+Y) redo. In a text field the
-  // browser's own text undo applies.
+  // Cmd/Ctrl+S save · Cmd/Ctrl+Z undo · Cmd/Ctrl+Shift+Z (or Ctrl+Y) redo · Cmd/Ctrl+E split the
+  // selected audio clip at the insert marker. In a text field the browser's own text undo applies.
   document.addEventListener('keydown', (e) => {
     if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
     const key = e.key.toLowerCase();
@@ -204,6 +211,10 @@ async function start(catalog) {
       if (typing) return;
       e.preventDefault();
       restore(history.undo());
+    } else if (key === 'e') {
+      if (typing) return;
+      e.preventDefault();
+      splitSelection();
     }
   });
   // Dropping a file anywhere else must not make the browser open it (and leave the app).
@@ -435,6 +446,22 @@ async function start(catalog) {
     select({ kind, ref });
   }
 
+  // Cmd/Ctrl+E: cuts the selected audio clip in two at the insert marker (one undo step) and selects
+  // the right-hand piece. When it can't, the song is unchanged and the status bar says why.
+  function splitSelection() {
+    if (selection?.kind !== 'clip') return setNote(SPLIT_NOTES.select);
+    const clip = selection.ref;
+    const result = splitClip(clip, grid.secAt(cursor), fileSeconds(clip.file));
+    if (result.reason === 'outside') return setNote(SPLIT_NOTES.outside);
+    if (result.reason === 'unknown-length') {
+      return setNote(unreadable(clip.file) ? SPLIT_NOTES.unreadable : SPLIT_NOTES.loading);
+    }
+    const { clips } = trackOfClip(clip);
+    clips.splice(clips.indexOf(clip), 1, result.left, result.right);
+    if (Object.values(SPLIT_NOTES).includes(note)) note = '';
+    select({ kind: 'clip', ref: result.right });
+  }
+
   function contains({ kind, ref }) {
     if (kind === 'track') return song.tracks.includes(ref);
     if (kind === 'clip') return Boolean(trackOfClip(ref));
@@ -537,9 +564,18 @@ async function start(catalog) {
         const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
         waveforms.set(key, { peaks: peaks(channels, PEAK_BUCKET), sampleRate: buffer.sampleRate, duration: buffer.duration });
         if (song.id && key.startsWith(`${song.id}/`)) render();
-      }, () => waveforms.set(key, 'failed'));
+      }, () => {
+        waveforms.set(key, 'failed');
+        if (song.id && key.startsWith(`${song.id}/`)) render(); // the lane stops saying "loading…"
+      });
     }
     return null;
+  }
+
+  // Whether an uploaded file turned out not to be decodable audio.
+  function unreadable(file) {
+    const key = `${song.id}/${file}`;
+    return clipSeconds.get(key) === 0 || waveforms.get(key) === 'failed';
   }
 
   // Uploads the files one at a time and adds an audio track for each, clip at 0 s. The first file

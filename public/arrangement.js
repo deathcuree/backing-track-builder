@@ -12,6 +12,7 @@
 // Dragging only moves the element on screen; the song changes once, when you let go (onMove), so a
 // drag is one edit. Cues snap to the grid (hold Cmd/Ctrl for sixteenths), locators and markers to
 // bars, audio clips move freely but not over another clip on their track.
+// Cmd/Ctrl+E splits the selected audio clip at the insert marker (see app.js).
 import { OUTPUTS, LIMITS, clipEnd } from '/shared/song.js';
 import { autoStep } from '/shared/grid.js';
 import { peakRange } from '/shared/waveform.js';
@@ -41,7 +42,8 @@ export const CUE_MIME = 'application/x-btb-cue'; // Browser cue being dragged: J
  *           clipFits: (clip: object, startSec: number) => boolean,
  *           onDropCue: (cue: { type: string, key: string }, at: number[]) => void,
  *           onLoopRange: (range: { startBar: number, endBar: number }) => void,
- *           getPeaks: (file: string) => { peaks: object, sampleRate: number, duration: number } | null }} handlers
+ *           getPeaks: (file: string) => { peaks: object, sampleRate: number, duration: number } | null,
+ *           unreadable: (file: string) => boolean }} handlers
  */
 export function createArrangement(el, handlers) {
   el.innerHTML = `
@@ -531,8 +533,8 @@ export function createArrangement(el, handlers) {
       const end = clipEnd(c, info?.duration ?? null);
       const width = end === null ? 120 : Math.max(1, (end - c.startSec) * pps);
       return `<div class="${classes(c, 'clip')}" data-kind="clip" data-track="${esc(track.id)}" data-i="${i}"
-        style="left:${c.startSec * pps}px;width:${width}px" title="${esc(c.file)} at ${clock(c.startSec, true)}">
-        <span class="clip-title">${esc(track.name)}${info ? '' : ' · loading…'}</span></div>`;
+        style="left:${c.startSec * pps}px;width:${width}px" title="${esc(c.file)} at ${clock(c.startSec, true)} (click where to cut, then Cmd/Ctrl+E to split)">
+        <span class="clip-title">${esc(track.name)}${info ? '' : handlers.unreadable(c.file) ? ' · unreadable' : ' · loading…'}</span></div>`;
     }).join('');
   }
 

@@ -19,6 +19,8 @@ export const CUE_TYPES = ['section', 'cue', 'count'];
 export const METER_UNITS = [4, 8];
 // Clips that meet within this much are touching, not overlapping (floating-point dust).
 const SEAM_TOLERANCE_SEC = 1e-6;
+// A split leaves at least this much on each side.
+const MIN_SPLIT_SEC = 0.001;
 
 export const LIMITS = {
   bpm: [40, 240],
@@ -181,6 +183,25 @@ export function clipEnd(clip, fileSec) {
   return fileSec === null || fileSec === undefined ? null : clip.startSec + fileSec - clip.offsetSec;
 }
 
+/**
+ * Cuts an audio clip in two at song time `atSec`: { left, right }, meeting there and together playing
+ * the same part of the file. `fileSec` is the file's length (needed for a clip that runs to the end
+ * of its file). Refused ({ reason }) within 1 ms of either edge or outside the clip ('outside'), or
+ * when the clip's end is unknown ('unknown-length').
+ */
+export function splitClip(clip, atSec, fileSec) {
+  const at = roundSec(atSec);
+  if (at <= clip.startSec + MIN_SPLIT_SEC) return { reason: 'outside' };
+  const end = clipEnd(clip, fileSec);
+  if (end === null) return { reason: 'unknown-length' };
+  if (at >= end - MIN_SPLIT_SEC) return { reason: 'outside' };
+  const into = roundSec(at - clip.startSec);
+  return {
+    left: { ...clip, lengthSec: into },
+    right: { ...clip, startSec: at, offsetSec: roundSec(clip.offsetSec + into), lengthSec: roundSec(end - at) },
+  };
+}
+
 /** "Él Shaddai (Live)" -> "el-shaddai-live"; always matches the server's id pattern. */
 export function slugify(title) {
   const slug = String(title)
@@ -289,6 +310,11 @@ function checkMarkers(list, key, label, inSong, barMessage, fail, checkValues) {
 
 function meterLookup(meter) {
   return (bar) => meter.findLast((m) => m.bar <= bar);
+}
+
+// Keeps split points exact to the nanosecond (10 - 3.214 = 6.786, not 6.7860000000000005).
+function roundSec(sec) {
+  return Math.round(sec * 1e9) / 1e9;
 }
 
 function isObject(value) {
