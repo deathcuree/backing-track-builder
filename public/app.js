@@ -39,6 +39,8 @@ async function start(catalog) {
   let fitPending = false; // zoom-to-fit the arrangement once it is visible
   let solo = new Set(); // soloed track ids; rehearsal only, never saved
   const history = createHistory();
+  const clipSeconds = new Map(); // "songId/file" -> decoded audio length in seconds (see growToFitAudio)
+  const measuring = new Set(); // keys of clipSeconds being decoded
   let loop = null; // loop brace { startBar, endBar } or null
   let loopOn = false;
   let grid = null; // last grid that could be built (kept while tempo/meter fields are being fixed)
@@ -160,7 +162,8 @@ async function start(catalog) {
     onChange: (path, { structural }) => {
       const track = path.match(/^tracks\.(\d+)\.(volumeDb|muted|output)$/);
       if (track) player.setTrack(song.tracks[Number(track[1])]);
-      changed({ structural, live: Boolean(track), mergeKey: structural ? undefined : path });
+      // no growing while the end bar is being typed, or "5" on the way to "50" would jump
+      changed({ structural, live: Boolean(track), mergeKey: structural ? undefined : path, fit: path !== 'endBar' });
     },
     onDelete: deleteSelection,
   });
@@ -210,7 +213,7 @@ async function start(catalog) {
   }
   // Space play/stop · Tab Arrangement/Session · 1–9 launch section · L loop the section heard ·
   // ←/→ previous/next setlist song (stopped) · Delete removes the selection · Esc selects the song ·
-  // +/− zoom
+  // +/− zoom · F full screen
   document.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, select, textarea')) return;
     const digit = e.code.match(/^(?:Digit|Numpad)([1-9])$/);
@@ -223,6 +226,7 @@ async function start(catalog) {
     else if (e.key === 'Escape') select(null);
     else if (e.key === '+' || e.key === '=') arrangement.zoom(1.5);
     else if (e.key === '-') arrangement.zoom(1 / 1.5);
+    else if (e.code === 'KeyF') controlbar.toggleFullscreen();
     else return;
     e.preventDefault();
   });
@@ -296,8 +300,9 @@ async function start(catalog) {
    * Call after every edit. `structural` re-renders the Detail panel; `live` marks changes the
    * player applies at once (volume, mute, output), so no "press Play again" note is needed.
    */
-  function changed({ structural = false, live = false, mergeKey } = {}) {
+  function changed({ structural = false, live = false, mergeKey, fit = true } = {}) {
     if (selection && !contains(selection)) selection = null;
+    if (fit) growToFitAudio();
     history.push(snapshotOf(song), { mergeKey });
     errors = validateSong(song);
     try {
@@ -373,7 +378,7 @@ async function start(catalog) {
     for (const t of song.tracks) player.setTrack(t);
     solo = new Set([...solo].filter((tid) => song.tracks.some((t) => t.id === tid)));
     player.setSolo(solo);
-    changed({ structural: true });
+    changed({ structural: true, fit: false }); // growing here would record a new step and drop the redos
   }
 
   function select(next) {
@@ -542,7 +547,6 @@ async function start(catalog) {
     if (added.length) selection = { kind: 'track', ref: added.at(-1) };
     changed({ structural: true });
     if (failed.length) showStatusMessages(failed);
-    for (const track of added) growToFit(track);
   }
 
   function addAudioTrack(file) {
@@ -557,19 +561,40 @@ async function start(catalog) {
     return track;
   }
 
-  // Raises the song end so the clip ends inside the song (never lowers it).
-  async function growToFit(track) {
+  // Raises the song end so every audio clip ends inside the song (never lowers it). Runs on every
+  // edit, so a faster tempo, a shorter meter or a clip moved later cannot cut the audio off. Clip
+  // lengths come from the decoded audio; until a file is decoded it is fitted when it arrives.
+  function growToFitAudio() {
+    if (validateSong(song).length) return; // e.g. a tempo being typed: fit once it is valid
+    const g = buildGrid(song);
+    let clipEnd = 0;
+    for (const track of song.tracks) {
+      if (track.type !== 'audio' || !track.clip || !Number.isFinite(track.clip.startSec)) continue;
+      const key = `${song.id}/${track.clip.file}`;
+      if (clipSeconds.has(key)) clipEnd = Math.max(clipEnd, track.clip.startSec + clipSeconds.get(key));
+      else measureClip(key, track);
+    }
+    if (g.endSec >= clipEnd) return;
+    const last = g.bars.at(-1);
+    song.endBar = Math.min(LIMITS.endBar[1], song.endBar + Math.ceil((clipEnd - g.endSec - 1e-9) / last.sec));
+  }
+
+  async function measureClip(key, track) {
+    if (measuring.has(key)) return;
+    measuring.add(key);
     try {
       const buffer = await player.audioBuffer(song.id, track.clip.file);
-      if (!song.tracks.includes(track)) return;
-      const clipEnd = track.clip.startSec + buffer.duration;
-      const g = buildGrid(song);
-      if (g.endSec >= clipEnd) return;
-      const last = g.bars.at(-1);
-      song.endBar = Math.min(LIMITS.endBar[1], song.endBar + Math.ceil((clipEnd - g.endSec) / last.sec));
-      changed({ structural: !selection });
+      clipSeconds.set(key, buffer.duration);
+      const endBar = song.endBar;
+      if (song.tracks.includes(track)) growToFitAudio();
+      if (song.endBar !== endBar) changed({ structural: !selection });
     } catch (err) {
-      showStatusMessages([`Audio "${track.name}" could not be read (${err.message || 'unsupported audio'}).`]);
+      clipSeconds.set(key, 0); // do not retry (and repeat the message) on every edit
+      if (song.tracks.includes(track)) {
+        showStatusMessages([`Audio "${track.name}" could not be read (${err.message || 'unsupported audio'}).`]);
+      }
+    } finally {
+      measuring.delete(key);
     }
   }
 

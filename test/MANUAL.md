@@ -283,3 +283,11 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
   code and data folders). The real start path with `BTB_DATA_DIR` set to a temporary folder: created it,
   copied the project's old `songs/` in (project copy untouched), a saved song landed there, a second start
   copied nothing. Not run against the user's real ~/Music folder, so their first start does that.
+
+## Full screen
+
+1. **Enter.** Click ⛶ at the right of the Arrangement / Session buttons (or press F outside a text
+   field): the browser's tabs, address bar and bookmarks disappear and the app fills the screen;
+   the ⛶ button turns orange.
+2. **Leave.** Press F or click ⛶ again, or press Esc: the browser comes back and ⛶ is grey again.
+   Playback is not interrupted either way.
