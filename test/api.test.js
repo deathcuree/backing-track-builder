@@ -47,7 +47,7 @@ const song = (overrides = {}) => ({ ...newSong(), id: 'way-maker', title: 'Way M
 
 const audioTrack = (id, file) => ({
   id, type: 'audio', name: file.replace(/\.wav$/, ''), color: 2, volumeDb: 0, muted: false, output: 'both',
-  clip: { file, startSec: 0 },
+  clips: [{ file, startSec: 0, offsetSec: 0, lengthSec: null }],
 });
 
 test('an empty library lists no songs', async () => {
@@ -86,6 +86,41 @@ test('the song list shows bpm and meter from the bar-1 markers and hides old-for
   const list = (await call('GET', '/api/songs')).json;
   assert.deepEqual(list.find((s) => s.id === 'odd-time'), { id: 'odd-time', title: 'Odd Time', bpm: 72, meter: [6, 8] });
   assert.ok(!list.some((s) => s.id === 'old-song'));
+});
+
+test('songs saved by the previous version (v2) are listed and open as version 3', async () => {
+  const v2 = {
+    ...song({ id: 'old-v2', title: 'Older Save' }), version: 2,
+    tracks: [...newSong().tracks,
+      { id: 'a1', type: 'audio', name: 'Band', color: 2, volumeDb: 0, muted: false, output: 'both', clip: { file: 'Band.wav', startSec: 3.214 } },
+      { id: 'a2', type: 'audio', name: 'Empty', color: 3, volumeDb: 0, muted: false, output: 'both', clip: null }],
+  };
+  mkdirSync(join(root, 'songs/old-v2'), { recursive: true });
+  writeFileSync(join(root, 'songs/old-v2/song.json'), JSON.stringify(v2));
+  const list = (await call('GET', '/api/songs')).json;
+  assert.ok(list.some((s) => s.id === 'old-v2'));
+  const loaded = (await call('GET', '/api/songs/old-v2')).json;
+  assert.equal(loaded.version, 3);
+  assert.deepEqual(loaded.tracks.slice(2).map((t) => [t.clip, t.clips]), [
+    [undefined, [{ file: 'Band.wav', startSec: 3.214, offsetSec: 0, lengthSec: null }]],
+    [undefined, []],
+  ]);
+  // the file stays as it was until the song is saved again
+  assert.equal(JSON.parse(readFileSync(join(root, 'songs/old-v2/song.json'), 'utf8')).version, 2);
+  assert.equal((await call('PUT', '/api/songs/old-v2', loaded)).status, 200);
+  assert.equal(JSON.parse(readFileSync(join(root, 'songs/old-v2/song.json'), 'utf8')).version, 3);
+});
+
+test('audio clips that overlap on a track are refused', async () => {
+  const base = song();
+  const res = await call('PUT', '/api/songs/way-maker', song({
+    tracks: [...base.tracks, { ...audioTrack('a1', 'Band.wav'), clips: [
+      { file: 'Band.wav', startSec: 0, offsetSec: 0, lengthSec: 10 },
+      { file: 'Band.wav', startSec: 9, offsetSec: 9, lengthSec: null },
+    ] }],
+  }));
+  assert.equal(res.status, 400);
+  assert.deepEqual(res.json.errors.map((e) => e.path), ['tracks[2].clips[1].startSec']);
 });
 
 test('saved files are readable, hand-editable JSON', async () => {
@@ -246,6 +281,22 @@ test('saving a song removes uploaded audio files no audio clip uses', async () =
   const files = readdirSync(join(root, 'songs/way-maker/stems'));
   assert.ok(files.includes('Keep.wav'));
   assert.ok(!files.includes(drop.json.file));
+});
+
+test('an audio file stays while any clip uses it, on any track', async () => {
+  const shared = await upload('way-maker', 'Shared.wav', Buffer.from('s'));
+  const file = shared.json.file;
+  const base = song();
+  const stems = () => readdirSync(join(root, 'songs/way-maker/stems'));
+  const piece = (startSec, lengthSec) => ({ file, startSec, offsetSec: startSec, lengthSec });
+  const withClips = (a1, a2) => song({ tracks: [...base.tracks,
+    { ...audioTrack('a1', file), clips: a1 }, { ...audioTrack('a2', file), clips: a2 }] });
+  assert.equal((await call('PUT', '/api/songs/way-maker', withClips([piece(0, 5), piece(20, null)], []))).status, 200);
+  assert.ok(stems().includes(file));
+  assert.equal((await call('PUT', '/api/songs/way-maker', withClips([], [piece(20, null)]))).status, 200);
+  assert.ok(stems().includes(file));
+  assert.equal((await call('PUT', '/api/songs/way-maker', withClips([], []))).status, 200);
+  assert.ok(!stems().includes(file));
 });
 
 test('overlapping saves all succeed', async () => {

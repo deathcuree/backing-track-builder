@@ -1,4 +1,4 @@
-// Timing engine for version-2 songs: turns the grid, the click track and the cue clips into timed
+// Timing engine for version-3 songs: turns the grid, the click track and the cue clips into timed
 // events, lists the audio clips and locator sections, and decides which bar plays next during
 // playback (jumps, loops). Pure and deterministic; used by the player, the WAV export and the
 // tests, so playback and export can never disagree about timing.
@@ -14,7 +14,7 @@ const FALLBACK_LANGUAGE = 'en';
  * @returns {{
  *   events: { t: number, bar: number, offset: number, track: string, kind: 'click'|'cue',
  *             role: 'accent'|'beat'|'eighth'|'sixteenth'|'section'|'cue'|'count', sample: string }[],
- *   clips: { track: string, file: string, startSec: number }[],
+ *   clips: { track: string, file: string, startSec: number, offsetSec: number, lengthSec: number|null }[],
  *   sections: { name: string, startBar: number, endBar: number, startSec: number, endSec: number }[],
  *   grid: ReturnType<typeof buildGrid>, totalSec: number, warnings: string[]
  * }}
@@ -56,8 +56,8 @@ export function buildSchedule(song, catalog) {
   }
 
   const clips = song.tracks
-    .filter((t) => t.type === 'audio' && t.clip)
-    .map((t) => ({ track: t.id, file: t.clip.file, startSec: t.clip.startSec }));
+    .filter((t) => t.type === 'audio')
+    .flatMap((t) => t.clips.map(({ file, startSec, offsetSec, lengthSec }) => ({ track: t.id, file, startSec, offsetSec, lengthSec })));
 
   const locators = [...song.locators].sort((a, b) => a.bar - b.bar);
   const sections = locators.map((l, i) => {
@@ -149,13 +149,21 @@ export function barEvents(schedule, state) {
 }
 
 /**
- * Where an audio clip is when song time `songSec` plays at some moment `when`: start the clip at
- * `when + delaySec`, `fileOffsetSec` seconds into its file. `clipStartSec` is the song time of the
- * file's first sample (negative skips the file's beginning).
+ * Where an audio clip is when song time `songSec` plays at some moment `when`: start it at
+ * `when + delaySec`, `fileOffsetSec` seconds into its file, for `durationSec` seconds (null = to the
+ * end of the file). null when a clip with a length has already ended by `songSec`.
+ * `clip` is { startSec, offsetSec, lengthSec } (see shared/song.js).
  */
-export function clipStart(clipStartSec, songSec) {
-  const fileSec = round(songSec - clipStartSec);
-  return fileSec >= 0 ? { delaySec: 0, fileOffsetSec: fileSec } : { delaySec: -fileSec, fileOffsetSec: 0 };
+export function clipStart(clip, songSec) {
+  const into = round(songSec - clip.startSec); // seconds into the clip; negative = not started yet
+  const delaySec = Math.max(0, -into);
+  const played = Math.max(0, into);
+  if (clip.lengthSec !== null && played >= clip.lengthSec) return null;
+  return {
+    delaySec,
+    fileOffsetSec: round(clip.offsetSec + played),
+    durationSec: clip.lengthSec === null ? null : round(clip.lengthSec - played),
+  };
 }
 
 // Keeps ms-level offsets exact (10 - 3.214 = 6.786, not 6.7860000000000005).

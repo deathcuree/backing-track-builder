@@ -121,7 +121,7 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
 1. **Build a song.** Browser → **+ New**. In the Detail panel type the title; in the Control Bar
    type or **Tap** the BPM and pick the time signature. **Import audio** → pick the song: it is
    saved first, an audio track with its waveform appears, and the end bar grows to fit it.
-2. **Line it up.** Select the audio track and change **Clip start (s)** until the song's first
+2. **Line it up.** Click the audio clip and change **Clip start (s)** until the song's first
    downbeat sits on bar 3 (zoom with −/+ or Cmd/Ctrl + scroll to check the waveform against the grid).
 3. **Count-in and cues.** Click the bar ruler at bar 2 (the orange start marker moves there). Click
    Counts → 1, 2, 3, 4 in the Browser; set each one's beat in the Detail panel. Add a section cue
@@ -177,7 +177,8 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
    marker on another marker's bar) is refused with a message. The bar-1 tempo and time signature
    markers don't move.
 3. **Drag an audio clip.** It moves freely; the readout shows the start time to the millisecond. Zoom
-   in and line the first downbeat up with a bar line.
+   in and line the first downbeat up with a bar line. It can't be dropped over another clip on its
+   track (it turns red and goes back).
 4. **Drag from the Browser.** Drag "Build" from Cues → Dynamic cues onto the Cues track: a line shows
    where it will land, and it is added there and selected.
 5. **Double-click** the Locators, Tempo or Time sig. strip to add one at that bar.
@@ -243,7 +244,7 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
    Cmd+Z undoes the typing as usual. Opening another song starts a fresh history.
 2. **Save.** Cmd/Ctrl+S saves (no browser "Save page" dialog).
 3. **Drop audio.** Drag audio files from Finder onto the arrangement: one new track per file, clip at
-   0 s. Drop on an audio lane that has no clip: the file goes into that lane. Other files are listed
+   0 s. Drop on an audio lane that has no clips: the file goes into that lane. Other files are listed
    as "Not added". Dropping a file anywhere else does nothing (the page stays open).
 4. **Solo.** Click S on a track: only that track is heard (the click too, as in Ableton). Click it
    again: everything is heard. Cmd/Ctrl-click S adds or removes tracks from the solo. Works in both
@@ -291,3 +292,48 @@ recorded to a click at a steady tempo (e.g. a MultiTracks stem or full mix).
    the ⛶ button turns orange.
 2. **Leave.** Press F or click ⛶ again, or press Esc: the browser comes back and ⛶ is grey again.
    Playback is not interrupted either way.
+
+## BTB-14a: Audio clips on a track (song format 3)
+
+Setup: a song saved before this change, with an audio track. For steps 4–6, a song with two clips on
+one track (until BTB-14b adds Split, edit song.json by hand: give the track `"clips"` with two entries
+such as `{ "file": "Band.wav", "startSec": 0, "offsetSec": 0, "lengthSec": 5 }` and
+`{ "file": "Band.wav", "startSec": 10, "offsetSec": 10, "lengthSec": 10 }`).
+
+1. **Older songs.** The song saved before this change is in the song list, opens, looks and plays as
+   before. After Save, its song.json has `"version": 3` and `"clips"` in place of `"clip"`.
+2. **Select a clip.** Click the clip: it is outlined and the Detail panel shows **Audio clip** (File,
+   Clip start, Starts in file, Length: "to end of file" for a whole file) with the track's name,
+   volume, mute, output and color below. Click the track's name in its header: **Audio track** with
+   "Click a clip in the lane to edit it."
+3. **Delete.** With a clip selected, Delete (or **Remove clip**) removes only that clip; the track and
+   its mixer stay, and an empty lane says "No audio. Drop a file here or use Import audio." Cmd+Z
+   brings the clip back. With the track's name selected, Delete removes the whole track.
+4. **Two clips.** Each shows only its part of the waveform. Drag the second clip onto the first: red,
+   and it goes back. Drag it into free space: it moves.
+5. **Play and export.** Play from bar 1: the first 5 s play, then silence until 10 s, then the file
+   from 10 s on. Start from a later bar, launch or loop a section across the gap: the same. Export WAV
+   and listen: the same.
+6. **Session view.** A section is ▶ on the audio column when any clip of it plays in the section.
+
+### Results
+- 2026-09-30: `npm test` 147 passing (new: format 3 validation, upgrading version-2 songs, clip ends,
+  the schedule's clip windows, the server upgrading on load, refusing overlaps and keeping shared files).
+  App run against a temporary data folder with a version-2 song and a 20 s test WAV (four loudness
+  steps), driven in headless Chrome for Testing via the DevTools protocol with real mouse and key events:
+  - Step 1: the v2 song was listed and opened as one clip (offset 0, to end of file); song.json stayed v2
+    until saved.
+  - Step 2: clicking the clip selected it and showed the Audio clip panel (Band.wav, 0, 0.000, to end of
+    file, then the Band track fields); the header name showed the Audio track panel with the hint.
+  - Step 3: Delete on a clip left the Band track with 1 clip; Cmd+Z restored 2; deleting both left the
+    empty-lane hint and the track; Delete on the header name removed the track.
+  - Step 4: dragged to ~6 s and ~5.1 s: moved (0:06.000, 0:05.100); to ~4.8 s (over the first clip):
+    refused and back at 0:05.100. Waveforms showed each clip's own part of the file. Dragging to *exactly*
+    5.000 s by mouse lands a millisecond short and is refused; typing 5 in Clip start gives an exact fit.
+  - Step 5 (audio source starts recorded in the page): from bar 1 → clip 1 at +0 s, file 0 s for 5 s;
+    clip 2 at +10 s, file 10 s for 10 s. From bar 4 (6 s) → only clip 2, at +4 s, file 10 s for 10 s.
+    Export: same two starts; the exported main channel's loudness per second was
+    0.14 ×5, silence ×5, 0.28 ×5, 0.51 ×5, silence (the file's 10–20 s part at 10–20 s).
+  - Step 6: ▶ ▶ for Intro and Verse. No console errors.
+  - Not checked by ear.
+

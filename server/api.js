@@ -4,7 +4,7 @@
 import { readFile, writeFile, rename, mkdir, readdir, stat, unlink, open } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { join, extname } from 'node:path';
-import { validateSong, sanitizeStemName, LIMITS, ID_RE } from '../shared/song.js';
+import { validateSong, upgradeSong, sanitizeStemName, LIMITS, ID_RE } from '../shared/song.js';
 import { validateSetlist } from '../shared/setlist.js';
 
 const MAX_BODY = 1024 * 1024;
@@ -56,7 +56,7 @@ async function route(root, req, parts, options) {
     checkId(id);
     const file = join(root, 'songs', id, 'song.json');
     allow(req, ['GET', 'PUT']);
-    if (req.method === 'GET') return readJson(file, () => { throw new HttpError(404, 'Song not found'); });
+    if (req.method === 'GET') return upgradeSong(await readJson(file, () => { throw new HttpError(404, 'Song not found'); }));
     const song = await readBody(req);
     if (song?.id !== id) throw new HttpError(400, 'Song id does not match the URL');
     const errors = validateSong(song);
@@ -215,7 +215,7 @@ async function receiveFile(dir, req, maxBytes, what) {
 // Uploaded audio files no audio clip of the saved song uses are deleted (they are copies; originals
 // stay wherever the user uploaded them from). In-progress uploads (.part files) are left alone.
 async function pruneStems(dir, tracks) {
-  const used = new Set(tracks.filter((t) => t.type === 'audio' && t.clip).map((t) => t.clip.file));
+  const used = new Set(tracks.filter((t) => t.type === 'audio').flatMap((t) => t.clips.map((c) => c.file)));
   const files = await readdir(dir).catch(() => []);
   await Promise.all(files
     .filter((f) => sanitizeStemName(f) === f && !used.has(f))
@@ -273,7 +273,7 @@ async function listSongs(root) {
   for (const e of entries) {
     if (!e.isDirectory() || !ID_RE.test(e.name)) continue;
     const song = await readJson(join(dir, e.name, 'song.json'), () => null).catch(() => null);
-    if (song?.version !== 2) continue; // older formats can't be opened
+    if (song?.version !== 2 && song?.version !== 3) continue; // older formats can't be opened (2 is upgraded on GET)
     const meter = song.meter?.[0];
     songs.push({ id: song.id, title: song.title, bpm: song.tempo?.[0]?.bpm, meter: [meter?.beats, meter?.unit] });
   }

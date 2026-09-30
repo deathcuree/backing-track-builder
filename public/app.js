@@ -1,6 +1,6 @@
 // App shell: loads the catalog and songs, owns the open song, the selection and the start bar,
 // and connects the Control Bar, Browser, Arrangement, Detail panel, player and export.
-import { newSong, validateSong, uniqueId, sanitizeStemName, STEM_EXTENSIONS, LIMITS } from '/shared/song.js';
+import { newSong, validateSong, clipEnd, uniqueId, sanitizeStemName, STEM_EXTENSIONS, LIMITS } from '/shared/song.js';
 import { buildGrid } from '/shared/grid.js';
 import { buildSchedule } from '/shared/schedule.js';
 import { peaks } from '/shared/waveform.js';
@@ -32,7 +32,7 @@ async function start(catalog) {
   let savedJson = null; // JSON of the song as opened or last saved
   let isNew = false; // never saved
   let songs = [];
-  let selection = null; // { kind: 'track'|'cue'|'locator'|'tempo'|'meter', ref } or null (the song)
+  let selection = null; // { kind: 'track'|'clip'|'cue'|'locator'|'tempo'|'meter', ref } or null (the song)
   let cursor = [1, 1, 1]; // insert marker [bar, beat, sixteenth]: where new things go and Play starts
   let view = 'arrangement'; // or 'session' (Tab switches)
   let position = null; // last playback position
@@ -124,6 +124,7 @@ async function start(catalog) {
       addAt(kind, bar);
     },
     onMove: moveItem,
+    clipFits,
     onDropCue: (cue, at) => {
       const clip = { at, type: cue.type, key: cue.key };
       cuesTrack().clips.push(clip);
@@ -407,12 +408,21 @@ async function start(catalog) {
   }
 
   // A finished drag in the arrangement: one edit. Refused when it would put two locators or two
-  // markers of a kind on the same bar.
+  // markers of a kind on the same bar, or an audio clip over another clip on its track.
   function moveItem(kind, ref, value) {
     if (kind === 'cue') {
       ref.at = value;
-    } else if (kind === 'track') {
-      ref.clip.startSec = value;
+    } else if (kind === 'clip') {
+      if (!clipFits(ref, value)) {
+        setNote('That would overlap another clip on the track.');
+        return render();
+      }
+      // Only the last clip on a track may run to the end of its file (see validateSong).
+      const fileSec = fileSeconds(ref.file);
+      if (ref.lengthSec === null && fileSec !== null && trackOfClip(ref).clips.length > 1) {
+        ref.lengthSec = fileSec - ref.offsetSec;
+      }
+      ref.startSec = value;
     } else {
       const list = kind === 'locator' ? song.locators : song[kind];
       if (list.some((m) => m !== ref && m.bar === value)) {
@@ -427,6 +437,7 @@ async function start(catalog) {
 
   function contains({ kind, ref }) {
     if (kind === 'track') return song.tracks.includes(ref);
+    if (kind === 'clip') return Boolean(trackOfClip(ref));
     if (kind === 'cue') return Boolean(cuesTrack()?.clips.includes(ref));
     if (kind === 'locator') return song.locators.includes(ref);
     return song[kind].includes(ref);
@@ -434,6 +445,27 @@ async function start(catalog) {
 
   function cuesTrack() {
     return song.tracks.find((t) => t.type === 'cues');
+  }
+
+  function trackOfClip(clip) {
+    return song.tracks.find((t) => t.type === 'audio' && t.clips.includes(clip));
+  }
+
+  // Decoded length of an uploaded file in seconds, null until known (or if it can't be read).
+  function fileSeconds(file) {
+    const sec = clipSeconds.get(`${song.id}/${file}`) ?? waveforms.get(`${song.id}/${file}`)?.duration;
+    return sec > 0 ? sec : null;
+  }
+
+  // Whether audio clip `clip` placed at `startSec` stays clear of the other clips on its track
+  // (ends may touch). A clip whose end is unknown is treated as running on forever.
+  function clipFits(clip, startSec) {
+    const track = trackOfClip(clip);
+    if (!track) return false;
+    const endOf = (c, start) => clipEnd({ ...c, startSec: start }, fileSeconds(c.file)) ?? Infinity;
+    const end = endOf(clip, startSec);
+    return track.clips.every((other) => other === clip
+      || endOf(other, other.startSec) <= startSec + 1e-6 || end <= other.startSec + 1e-6);
   }
 
   // The insert marker kept inside the song after the end bar or a time signature changed.
@@ -466,6 +498,9 @@ async function start(catalog) {
     if (kind === 'track') {
       if (ref.type !== 'audio') return;
       song.tracks.splice(song.tracks.indexOf(ref), 1);
+    } else if (kind === 'clip') {
+      const { clips } = trackOfClip(ref);
+      clips.splice(clips.indexOf(ref), 1);
     } else if (kind === 'cue') {
       cuesTrack().clips.splice(cuesTrack().clips.indexOf(ref), 1);
     } else {
@@ -484,7 +519,7 @@ async function start(catalog) {
 
   function itemOfPath(path) {
     let m = path.match(/^tracks\[(\d+)\]\.clips\[(\d+)\]/);
-    if (m) return { kind: 'cue', ref: song.tracks[m[1]]?.clips?.[m[2]] };
+    if (m) return { kind: song.tracks[m[1]]?.type === 'audio' ? 'clip' : 'cue', ref: song.tracks[m[1]]?.clips?.[m[2]] };
     m = path.match(/^tracks\[(\d+)\]/);
     if (m) return { kind: 'track', ref: song.tracks[m[1]] };
     m = path.match(/^(locators|tempo|meter)\[(\d+)\]/);
@@ -492,13 +527,13 @@ async function start(catalog) {
     return null;
   }
 
-  function waveformFor(track) {
-    const key = `${song.id}/${track.clip.file}`;
+  function waveformFor(file) {
+    const key = `${song.id}/${file}`;
     const known = waveforms.get(key);
     if (known && typeof known === 'object') return known;
     if (!known && song.id) {
       waveforms.set(key, 'loading');
-      player.audioBuffer(song.id, track.clip.file).then((buffer) => {
+      player.audioBuffer(song.id, file).then((buffer) => {
         const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
         waveforms.set(key, { peaks: peaks(channels, PEAK_BUCKET), sampleRate: buffer.sampleRate, duration: buffer.duration });
         if (song.id && key.startsWith(`${song.id}/`)) render();
@@ -508,7 +543,7 @@ async function start(catalog) {
   }
 
   // Uploads the files one at a time and adds an audio track for each, clip at 0 s. The first file
-  // goes into `target` instead when it is an audio track without a clip. A song that was never
+  // goes into `target` instead when it is an audio track without clips. A song that was never
   // saved is saved first (its folder must exist to hold the files).
   async function importAudio(files, target = null) {
     if (isNew && !(await save())) {
@@ -531,8 +566,8 @@ async function start(catalog) {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error ?? res.statusText);
-        if (target && !target.clip && song.tracks.includes(target)) {
-          target.clip = { file: data.file, startSec: 0 };
+        if (target && !target.clips.length && song.tracks.includes(target)) {
+          target.clips.push(wholeFile(data.file));
           added.push(target);
           target = null;
         } else {
@@ -555,35 +590,42 @@ async function start(catalog) {
     const track = {
       id: `a${n}`, type: 'audio', name: file.replace(/\.[^.]+$/, '').slice(0, LIMITS.nameLength).trim() || `Audio ${n}`,
       color: AUDIO_TRACK_COLORS[audio.length % AUDIO_TRACK_COLORS.length], volumeDb: 0, muted: false, output: 'both',
-      clip: { file, startSec: 0 },
+      clips: [wholeFile(file)],
     };
     song.tracks.push(track);
     return track;
   }
 
+  function wholeFile(file) {
+    return { file, startSec: 0, offsetSec: 0, lengthSec: null };
+  }
+
   // Raises the song end so every audio clip ends inside the song (never lowers it). Runs on every
-  // edit, so a faster tempo, a shorter meter or a clip moved later cannot cut the audio off. Clip
-  // lengths come from the decoded audio; until a file is decoded it is fitted when it arrives.
+  // edit, so a faster tempo, a shorter meter or a clip moved later cannot cut the audio off. A clip
+  // that runs to the end of its file needs the decoded audio; until then it is fitted when it arrives.
   function growToFitAudio() {
     if (validateSong(song).length) return; // e.g. a tempo being typed: fit once it is valid
     const g = buildGrid(song);
-    let clipEnd = 0;
+    let audioEnd = 0;
     for (const track of song.tracks) {
-      if (track.type !== 'audio' || !track.clip || !Number.isFinite(track.clip.startSec)) continue;
-      const key = `${song.id}/${track.clip.file}`;
-      if (clipSeconds.has(key)) clipEnd = Math.max(clipEnd, track.clip.startSec + clipSeconds.get(key));
-      else measureClip(key, track);
+      if (track.type !== 'audio') continue;
+      for (const clip of track.clips) {
+        const end = clipEnd(clip, fileSeconds(clip.file));
+        if (end !== null) audioEnd = Math.max(audioEnd, end);
+        else if (!clipSeconds.has(`${song.id}/${clip.file}`)) measureClip(clip.file, track);
+      }
     }
-    if (g.endSec >= clipEnd) return;
+    if (g.endSec >= audioEnd) return;
     const last = g.bars.at(-1);
-    song.endBar = Math.min(LIMITS.endBar[1], song.endBar + Math.ceil((clipEnd - g.endSec - 1e-9) / last.sec));
+    song.endBar = Math.min(LIMITS.endBar[1], song.endBar + Math.ceil((audioEnd - g.endSec - 1e-9) / last.sec));
   }
 
-  async function measureClip(key, track) {
+  async function measureClip(file, track) {
+    const key = `${song.id}/${file}`;
     if (measuring.has(key)) return;
     measuring.add(key);
     try {
-      const buffer = await player.audioBuffer(song.id, track.clip.file);
+      const buffer = await player.audioBuffer(song.id, file);
       clipSeconds.set(key, buffer.duration);
       const endBar = song.endBar;
       if (song.tracks.includes(track)) growToFitAudio();

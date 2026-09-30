@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { newSong, validateSong, LIMITS, OUTPUTS, slugify, uniqueId, sanitizeStemName } from '../shared/song.js';
+import { newSong, validateSong, upgradeSong, clipEnd, LIMITS, OUTPUTS, slugify, uniqueId, sanitizeStemName } from '../shared/song.js';
 
 function valid() {
   const s = newSong();
@@ -16,7 +16,7 @@ function valid() {
   ];
   s.tracks.push({
     id: 'a1', type: 'audio', name: 'El Shaddai', color: 2, volumeDb: 0, muted: false,
-    output: 'both', clip: { file: 'El Shaddai.wav', startSec: 3.214 },
+    output: 'both', clips: [{ file: 'El Shaddai.wav', startSec: 3.214, offsetSec: 0, lengthSec: null }],
   });
   return s;
 }
@@ -32,7 +32,7 @@ describe('newSong', () => {
   test('is valid and matches the spec defaults', () => {
     const s = newSong();
     assert.deepEqual(validateSong(s), []);
-    assert.equal(s.version, 2);
+    assert.equal(s.version, 3);
     assert.equal(s.title, 'New song');
     assert.equal(s.endBar, 16);
     assert.deepEqual(s.tempo, [{ bar: 1, bpm: 120 }]);
@@ -70,8 +70,9 @@ describe('validateSong', () => {
     assert.deepEqual(validateSong([]).map((e) => e.path), ['']);
   });
 
-  test('version must be 2', () => {
+  test('version must be 3', () => {
     assert.deepEqual(paths((s) => { s.version = 1; }), ['version']);
+    assert.deepEqual(paths((s) => { s.version = 2; }), ['version']);
   });
 
   test('title', () => {
@@ -128,14 +129,14 @@ describe('validateSong', () => {
 
   test('up to 32 audio tracks', () => {
     assert.deepEqual(paths((s) => {
-      for (let i = 2; i <= 33; i++) s.tracks.push({ ...s.tracks[2], id: `a${i}`, clip: null });
+      for (let i = 2; i <= 33; i++) s.tracks.push({ ...s.tracks[2], id: `a${i}`, clips: [] });
     }), ['tracks']);
   });
 
   test('track ids: click, cues and a<n>, unique', () => {
     assert.deepEqual(paths((s) => { s.tracks[2].id = 'song'; }), ['tracks[2].id']);
     assert.deepEqual(paths((s) => { s.tracks[0].id = 'metronome'; }), ['tracks[0].id']);
-    assert.deepEqual(paths((s) => { s.tracks.push({ ...s.tracks[2], clip: null }); }), ['tracks[3].id']);
+    assert.deepEqual(paths((s) => { s.tracks.push({ ...s.tracks[2], clips: [] }); }), ['tracks[3].id']);
   });
 
   test('unknown track type', () => {
@@ -199,17 +200,105 @@ describe('validateSong', () => {
     assert.match(validateSong(s)[0].message, /4 beats/);
   });
 
-  test('audio clip: null, or a valid file used once and a start time within an hour', () => {
-    assert.deepEqual(paths((s) => { s.tracks[2].clip = null; }), []);
-    assert.deepEqual(paths((s) => { s.tracks[2].clip.startSec = -2; }), []);
-    assert.deepEqual(paths((s) => { s.tracks[2].clip.startSec = 3601; }), ['tracks[2].clip.startSec']);
-    assert.deepEqual(paths((s) => { s.tracks[2].clip.startSec = NaN; }), ['tracks[2].clip.startSec']);
-    assert.deepEqual(paths((s) => { s.tracks[2].clip.file = '../x.wav'; }), ['tracks[2].clip.file']);
-    assert.deepEqual(paths((s) => { s.tracks[2].clip.file = 'notes.txt'; }), ['tracks[2].clip.file']);
+  test('audio clips: a list of valid pieces', () => {
+    const clip = (s) => s.tracks[2].clips[0];
+    assert.deepEqual(paths((s) => { s.tracks[2].clips = []; }), []);
+    assert.deepEqual(paths((s) => { clip(s).startSec = -2; }), []);
+    assert.deepEqual(paths((s) => { clip(s).startSec = 3601; }), ['tracks[2].clips[0].startSec']);
+    assert.deepEqual(paths((s) => { clip(s).startSec = NaN; }), ['tracks[2].clips[0].startSec']);
+    assert.deepEqual(paths((s) => { clip(s).file = '../x.wav'; }), ['tracks[2].clips[0].file']);
+    assert.deepEqual(paths((s) => { clip(s).file = 'notes.txt'; }), ['tracks[2].clips[0].file']);
+    assert.deepEqual(paths((s) => { clip(s).offsetSec = -1; }), ['tracks[2].clips[0].offsetSec']);
+    assert.deepEqual(paths((s) => { clip(s).offsetSec = undefined; }), ['tracks[2].clips[0].offsetSec']);
+    assert.deepEqual(paths((s) => { clip(s).lengthSec = 0; }), ['tracks[2].clips[0].lengthSec']);
+    assert.deepEqual(paths((s) => { clip(s).lengthSec = '5'; }), ['tracks[2].clips[0].lengthSec']);
+    assert.deepEqual(paths((s) => { clip(s).lengthSec = 12.5; }), []);
+    assert.deepEqual(paths((s) => { s.tracks[2].clips = [null]; }), ['tracks[2].clips[0]']);
+    assert.deepEqual(paths((s) => { s.tracks[2].clips = { file: 'x.wav', startSec: 0 }; }), ['tracks[2].clips']);
+    assert.deepEqual(paths((s) => { delete s.tracks[2].clips; s.tracks[2].clip = null; }), ['tracks[2].clips']);
     assert.deepEqual(paths((s) => {
-      s.tracks.push({ ...s.tracks[2], id: 'a2', clip: { file: 'El Shaddai.wav', startSec: 0 } });
-    }), ['tracks[3].clip.file']);
-    assert.deepEqual(paths((s) => { s.tracks[2].clip = 'x.wav'; }), ['tracks[2].clip']);
+      s.tracks[2].clips = Array.from({ length: 2001 }, (_, i) => ({ file: 'a.wav', startSec: i, offsetSec: 0, lengthSec: 1 }));
+    }), ['tracks[2].clips']);
+  });
+
+  test('pieces may share a file, on one track or several', () => {
+    assert.deepEqual(paths((s) => {
+      s.tracks[2].clips = [
+        { file: 'El Shaddai.wav', startSec: 0, offsetSec: 0, lengthSec: 8 },
+        { file: 'El Shaddai.wav', startSec: 20, offsetSec: 20, lengthSec: null },
+      ];
+      s.tracks.push({ ...s.tracks[2], id: 'a2', clips: [{ file: 'El Shaddai.wav', startSec: 0, offsetSec: 0, lengthSec: null }] });
+    }), []);
+  });
+
+  test('pieces on a track must not overlap; touching ends are fine', () => {
+    const two = (a, b) => (s) => { s.tracks[2].clips = [a, b]; };
+    const piece = (startSec, lengthSec) => ({ file: 'El Shaddai.wav', startSec, offsetSec: 0, lengthSec });
+    assert.deepEqual(paths(two(piece(0, 10), piece(10, 5))), []);
+    assert.deepEqual(paths(two(piece(0, 10), piece(9.5, 5))), ['tracks[2].clips[1].startSec']);
+    // listed out of order: the later-starting piece is the one reported
+    assert.deepEqual(paths(two(piece(9.5, 5), piece(0, 10))), ['tracks[2].clips[0].startSec']);
+    // floating-point dust at the seam (0.1 + 0.2) is not an overlap
+    assert.deepEqual(paths(two(piece(0.1, 0.2), piece(0.3, 1))), []);
+    const errors = validateSong((() => { const s = valid(); two(piece(0, 10), piece(9.5, 5))(s); return s; })());
+    assert.match(errors[0].message, /overlaps/);
+  });
+
+  test('only the last piece on a track may run to the end of its file', () => {
+    const piece = (startSec, lengthSec) => ({ file: 'El Shaddai.wav', startSec, offsetSec: 0, lengthSec });
+    assert.deepEqual(paths((s) => { s.tracks[2].clips = [piece(0, 5), piece(10, null)]; }), []);
+    assert.deepEqual(paths((s) => { s.tracks[2].clips = [piece(0, null), piece(10, 5)]; }), ['tracks[2].clips[0].lengthSec']);
+    assert.deepEqual(paths((s) => { s.tracks[2].clips = [piece(10, 5), piece(0, null)]; }), ['tracks[2].clips[1].lengthSec']);
+  });
+});
+
+describe('upgradeSong', () => {
+  function v2() {
+    const s = valid();
+    s.version = 2;
+    delete s.tracks[2].clips;
+    s.tracks[2].clip = { file: 'El Shaddai.wav', startSec: 3.214 };
+    s.tracks.push({ ...s.tracks[2], id: 'a2', name: 'Empty', clip: null });
+    return s;
+  }
+
+  test('turns a version-2 song into a valid version-3 song that plays the same', () => {
+    const up = upgradeSong(v2());
+    assert.equal(up.version, 3);
+    assert.deepEqual(up.tracks[2].clips, [{ file: 'El Shaddai.wav', startSec: 3.214, offsetSec: 0, lengthSec: null }]);
+    assert.ok(!('clip' in up.tracks[2]));
+    assert.deepEqual(up.tracks[3].clips, []);
+    assert.deepEqual(up.tracks[1].clips, valid().tracks[1].clips); // cue clips untouched
+    assert.deepEqual(validateSong(up), []);
+  });
+
+  test('does not change its input', () => {
+    const old = v2();
+    const before = JSON.stringify(old);
+    upgradeSong(old);
+    assert.equal(JSON.stringify(old), before);
+  });
+
+  test('leaves other versions alone', () => {
+    const s = valid();
+    assert.equal(upgradeSong(s), s);
+    const v1 = { version: 1, id: 'old', title: 'Old' };
+    assert.equal(upgradeSong(v1), v1);
+    assert.equal(upgradeSong(null), null);
+  });
+});
+
+describe('clipEnd', () => {
+  test('a piece with a length ends that long after its start', () => {
+    assert.equal(clipEnd({ startSec: 2, offsetSec: 8, lengthSec: 172 }, null), 174);
+    assert.equal(clipEnd({ startSec: 2, offsetSec: 8, lengthSec: 172 }, 999), 174);
+  });
+
+  test('an open piece ends with its file; unknown until the file length is known', () => {
+    assert.equal(clipEnd({ startSec: 2, offsetSec: 0, lengthSec: null }, 180), 182);
+    assert.equal(clipEnd({ startSec: 10, offsetSec: 8, lengthSec: null }, 180), 182);
+    assert.equal(clipEnd({ startSec: -3, offsetSec: 0, lengthSec: null }, 180), 177);
+    assert.equal(clipEnd({ startSec: 2, offsetSec: 0, lengthSec: null }, null), null);
   });
 });
 

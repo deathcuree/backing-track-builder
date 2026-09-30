@@ -1,4 +1,4 @@
-// Bar/beat grid of a version-2 song: where every bar starts and how long it lasts, from the tempo
+// Bar/beat grid of a version-3 song: where every bar starts and how long it lasts, from the tempo
 // and meter markers the user placed by hand. Pure; shared by the timing engine, the UI and tests.
 //
 // Positions are [bar, beat, sixteenth], all 1-based, as Ableton shows them ("17.3.1"). A beat is
