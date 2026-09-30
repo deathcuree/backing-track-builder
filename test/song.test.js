@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { newSong, validateSong, upgradeSong, clipEnd, LIMITS, OUTPUTS, slugify, uniqueId, sanitizeStemName } from '../shared/song.js';
+import { newSong, validateSong, upgradeSong, clipEnd, splitClip, LIMITS, OUTPUTS, slugify, uniqueId, sanitizeStemName } from '../shared/song.js';
 
 function valid() {
   const s = newSong();
@@ -299,6 +299,65 @@ describe('clipEnd', () => {
     assert.equal(clipEnd({ startSec: 10, offsetSec: 8, lengthSec: null }, 180), 182);
     assert.equal(clipEnd({ startSec: -3, offsetSec: 0, lengthSec: null }, 180), 177);
     assert.equal(clipEnd({ startSec: 2, offsetSec: 0, lengthSec: null }, null), null);
+  });
+});
+
+describe('splitClip', () => {
+  const band = (startSec, offsetSec, lengthSec) => ({ file: 'Band.wav', startSec, offsetSec, lengthSec });
+
+  test('a whole-file clip cut at 10 s: the spec example', () => {
+    // 180 s file placed at 2 s, cut at 10 s
+    assert.deepEqual(splitClip(band(2, 0, null), 10, 180), {
+      left: band(2, 0, 8),
+      right: band(10, 8, 172),
+    });
+  });
+
+  test('a clip that already has a window keeps its file range across the two pieces', () => {
+    // plays file 8–180 s at song 10–182 s; cut at song 100 s = file 98 s
+    assert.deepEqual(splitClip(band(10, 8, 172), 100, null), {
+      left: band(10, 8, 90),
+      right: band(100, 98, 82),
+    });
+  });
+
+  test('a clip placed before bar 1 splits the same way', () => {
+    // starts at −3 s, so song 0 s is file 3 s; cut at song 1 s = file 4 s
+    assert.deepEqual(splitClip(band(-3, 0, null), 1, 20), { left: band(-3, 0, 4), right: band(1, 4, 16) });
+  });
+
+  test('the pieces meet exactly and cover the same part of the file', () => {
+    const { left, right } = splitClip(band(0.1, 0.2, 5), 0.3, null);
+    assert.ok(Math.abs(left.startSec + left.lengthSec - right.startSec) < 1e-9);
+    assert.ok(Math.abs(right.offsetSec + right.lengthSec - 5.2) < 1e-9);
+    assert.deepEqual(validateSong((() => {
+      const s = valid();
+      s.tracks[2].clips = [{ ...left, file: 'El Shaddai.wav' }, { ...right, file: 'El Shaddai.wav' }];
+      return s;
+    })()), []);
+  });
+
+  test('both pieces keep the file and are new objects', () => {
+    const clip = band(2, 0, null);
+    const { left, right } = splitClip(clip, 10, 180);
+    assert.notEqual(left, clip);
+    assert.equal(right.file, 'Band.wav');
+    assert.deepEqual(clip, band(2, 0, null));
+  });
+
+  test('refused at or outside the clip edges (within 1 ms)', () => {
+    const clip = band(2, 0, 8); // 2–10 s
+    for (const at of [0, 2, 2.0005, 9.9995, 10, 12]) {
+      assert.deepEqual(splitClip(clip, at, null), { reason: 'outside' }, `at ${at}`);
+    }
+    assert.ok(splitClip(clip, 2.002, null).left);
+    assert.ok(splitClip(clip, 9.998, null).right);
+  });
+
+  test('a whole-file clip needs the file length to be split', () => {
+    assert.deepEqual(splitClip(band(2, 0, null), 10, null), { reason: 'unknown-length' });
+    assert.deepEqual(splitClip(band(2, 0, null), 1, null), { reason: 'outside' });
+    assert.deepEqual(splitClip(band(2, 0, null), 190, 180), { reason: 'outside' }); // past the audio
   });
 });
 
