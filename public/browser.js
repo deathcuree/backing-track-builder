@@ -8,13 +8,14 @@ const GROUPS = [['section', 'Sections'], ['cue', 'Dynamic cues'], ['count', 'Cou
 /**
  * @param {HTMLElement} el
  * @param {{ catalog: object, onOpenSong: (id: string) => void, onNewSong: () => void,
+ *           onDuplicateSong: (id: string) => void,
  *           onAddCue: (cue: { type: string, key: string }) => void }} handlers
  */
-export function createBrowser(el, { catalog, onOpenSong, onNewSong, onAddCue }) {
+export function createBrowser(el, { catalog, onOpenSong, onNewSong, onDuplicateSong, onAddCue }) {
   el.innerHTML = `
     <section class="br-section">
       <div class="br-head"><h2>Songs</h2><button type="button" data-action="new-song" title="New song">+ New</button></div>
-      <ul class="br-list" id="br-songs"></ul>
+      <ul class="br-list br-songs" id="br-songs"></ul>
     </section>
     <section class="br-section" id="br-setlists"></section>
     <section class="br-section br-cues">
@@ -26,6 +27,8 @@ export function createBrowser(el, { catalog, onOpenSong, onNewSong, onAddCue }) 
 
   el.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="new-song"]')) return onNewSong();
+    const duplicate = e.target.closest('[data-duplicate]');
+    if (duplicate) return onDuplicateSong(duplicate.dataset.duplicate);
     const song = e.target.closest('[data-song]');
     if (song) return onOpenSong(song.dataset.song);
     const cue = e.target.closest('[data-cue-type]');
@@ -44,10 +47,15 @@ export function createBrowser(el, { catalog, onOpenSong, onNewSong, onAddCue }) 
     /** @param {{ id: string, title: string, bpm: number, meter: number[] }[]} songs */
     renderSongs(songs, currentId) {
       el.querySelector('#br-songs').innerHTML = songs.map((s) => `
-        <li><button type="button" data-song="${esc(s.id)}" ${s.id === currentId ? 'aria-current="true"' : ''}>
-          <span>${esc(s.title)}</span>
-          <span class="muted small">${esc(s.bpm)} · ${esc(s.meter.join('/'))}</span>
-        </button></li>`).join('') || '<li class="muted small br-empty">No songs yet.</li>';
+        <li>
+          <button type="button" data-song="${esc(s.id)}" ${s.id === currentId ? 'aria-current="true"' : ''}>
+            <span>${esc(s.title)}</span>
+            <span class="muted small">${esc(s.bpm)} · ${esc(s.meter.join('/'))}</span>
+          </button>
+          <span class="br-actions">
+            <button type="button" data-duplicate="${esc(s.id)}" title="Duplicate song" aria-label="Duplicate ${esc(s.title)}">⧉</button>
+          </span>
+        </li>`).join('') || '<li class="muted small br-empty">No songs yet.</li>';
     },
     /** Lists the cues for the Cues track's language (English stand-ins are marked EN). */
     renderCues(lang) {

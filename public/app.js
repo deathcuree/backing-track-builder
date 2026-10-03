@@ -52,7 +52,7 @@ async function start(catalog) {
   let grid = null; // last grid that could be built (kept while tempo/meter fields are being fixed)
   let errors = [];
   let warnings = [];
-  let busy = ''; // 'uploading' | 'exporting' | ''
+  let busy = ''; // 'uploading' | 'exporting' | 'duplicating' | ''
   let note = '';
   let settings = null;
   let extraMessages = []; // import/export/load problems shown until the next song is opened
@@ -104,6 +104,7 @@ async function start(catalog) {
       if (id !== song.id) whenSaved(async () => open(await api('GET', `/api/songs/${id}`), true));
     },
     onNewSong: () => whenSaved(() => open(newSong(), false)),
+    onDuplicateSong: (id) => whenSaved(() => duplicate(id)),
     onAddCue: ({ type, key }) => {
       const clip = { at: [...cursor], type, key };
       cuesTrack().clips.push(clip);
@@ -745,6 +746,33 @@ async function start(catalog) {
     setlists.render();
     render();
     return true;
+  }
+
+  // Copies a saved song, audio files included, as "<title> copy" and opens the copy.
+  async function duplicate(id) {
+    if (busy) return setNote('Wait for the import, export or copy in progress to finish.');
+    busy = 'duplicating';
+    render();
+    setNote('Duplicating…');
+    const shown = song;
+    const shownJson = JSON.stringify(song);
+    try {
+      const copy = await api('POST', `/api/songs/${id}/copy`);
+      songs = await api('GET', '/api/songs');
+      if (song !== shown || JSON.stringify(song) !== shownJson) {
+        // edited (or another song opened) while the audio was being copied: leave that on screen
+        browser.renderSongs(songs, song.id);
+        setNote(`Duplicated as “${copy.title}”; open it from the Songs list.`);
+      } else {
+        open(copy, true);
+        setNote(`Duplicated as “${copy.title}”.`);
+      }
+    } catch (err) {
+      setNote(`Duplicate failed: ${err.message}`);
+    } finally {
+      busy = '';
+      render();
+    }
   }
 
   let settingsTimer;

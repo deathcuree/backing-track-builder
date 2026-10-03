@@ -373,3 +373,41 @@ Setup: a song with an audio track (a stem or a full mix).
     decoding slowed down on purpose).
   - Step 5: Cmd+E with the Clip start field focused → no split; Cmd+S → saved with the clips as shown.
   - No console errors. Not checked by ear.
+
+
+## BTB-15: Duplicate song
+
+Setup: two saved songs, one with an audio track.
+
+1. **Duplicate.** Hover a song in the Songs list (or Tab to it): a ⧉ button appears on the right. Click it
+   on a song that is not open → "Way Maker copy" appears in the list and opens, saved, with the same
+   tracks, cues, locators and audio. The status bar says "Duplicated as “Way Maker copy”." Play it: the
+   audio plays.
+2. **Independent.** In the copy, delete the audio track and save. Open the original: its audio track is
+   still there and plays.
+3. **Numbering.** Duplicate the same song again → "Way Maker copy 2". Duplicate a copy → "Way Maker copy copy".
+4. **Unsaved changes.** Change the open song's title, then click ⧉ on any song: the Save / Discard / Cancel
+   prompt comes first. Cancel → no new song, the edit is still there. Discard → the copy is made and
+   opens (a copy of the open song has the saved version). Save → the song is saved, then copied (a copy of
+   the open song includes the edit).
+5. **Failure.** With the app open, move a song's folder out of the data folder and click its ⧉ →
+   "Duplicate failed: Song not found"; the open song and the list don't change.
+6. **Left alone.** The copy is in no setlist, and exports/ has no new file.
+
+### Results
+- 2026-10-03: `npm test` 160 passing (new, through the HTTP API: a copy has the new title and id and the
+  same content; audio files are copied and the original keeps its own; "copy 2"/"copy 3" numbering and a
+  copy of a copy; an existing folder is never taken over; saving the copy with its audio track removed
+  leaves the original's audio; a version-2 song is copied as version 3; unknown song 404, bad id 400,
+  GET/PUT 405, none of them creating a folder). App run against a temporary data folder (two songs, one
+  with a 4 s WAV), driven in headless Brave via the DevTools protocol with real mouse events:
+  - Step 1: button hidden until hover (and shown with keyboard focus in the row); click on Way Maker
+    (not open) → "Way Maker copy" listed and open, "Saved", note as written; its Band.wav is served
+    (176 444 bytes) and the waveform draws.
+  - Step 3: a second copy → "Way Maker copy 2" (id way-maker-copy-2).
+  - Step 4: prompt shown; Cancel → list unchanged, still "Unsaved changes"; Discard → "Goodness of God
+    copy" made and opened; title edited to "Goodness of God Live copy", ⧉ on that open song, Save →
+    saved under that title and "Goodness of God Live copy copy" opened.
+  - Step 5: folder moved away → "Duplicate failed: Song not found", list and open song unchanged.
+  - No console errors other than the expected 404 in step 5.
+  - Steps 2 and 6 are covered by the API tests, not driven in the browser. Not checked by ear.
