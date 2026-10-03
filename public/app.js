@@ -105,6 +105,7 @@ async function start(catalog) {
     },
     onNewSong: () => whenSaved(() => open(newSong(), false)),
     onDuplicateSong: (id) => whenSaved(() => duplicate(id)),
+    onDeleteSong: deleteSong,
     onAddCue: ({ type, key }) => {
       const clip = { at: [...cursor], type, key };
       cuesTrack().clips.push(clip);
@@ -772,6 +773,28 @@ async function start(catalog) {
     } finally {
       busy = '';
       render();
+    }
+  }
+
+  // Deletes a saved song and its audio files for good (the Browser asks "Really delete?" first).
+  // When it was the open song, the first song left opens (or a new one).
+  async function deleteSong(id) {
+    if (busy) return setNote('Wait for the import, export or copy in progress to finish.');
+    const title = songs.find((s) => s.id === id)?.title ?? id;
+    try {
+      await api('DELETE', `/api/songs/${id}`);
+      songs = await api('GET', '/api/songs');
+      for (const cache of [waveforms, clipSeconds]) {
+        for (const key of cache.keys()) if (key.startsWith(`${id}/`)) cache.delete(key);
+      }
+      if (id === song.id) open(songs[0] ? await api('GET', `/api/songs/${songs[0].id}`) : newSong(), Boolean(songs[0]));
+      else {
+        browser.renderSongs(songs, song.id);
+        setlists.render();
+      }
+      setNote(`Deleted “${title}”.`);
+    } catch (err) {
+      setNote(`Delete failed: ${err.message}`);
     }
   }
 

@@ -411,3 +411,32 @@ Setup: two saved songs, one with an audio track.
   - Step 5: folder moved away → "Duplicate failed: Song not found", list and open song unchanged.
   - No console errors other than the expected 404 in step 5.
   - Steps 2 and 6 are covered by the API tests, not driven in the browser. Not checked by ear.
+
+
+## Delete song
+
+Setup: three saved songs, one of them in a setlist.
+
+1. **Two clicks.** Hover a song in the Songs list and click ✕: the button turns into a red "Really
+   delete?" and stays visible. Wait 3 seconds without clicking → it goes back to ✕ and nothing is deleted.
+2. **Delete.** Click ✕ then "Really delete?" on a song that is not open → it leaves the list, the status
+   bar says "Deleted “Way Maker”.", and its folder (song and audio) is gone from the data folder. The
+   open song, including unsaved changes, is untouched. In a setlist the song shows as "Missing: way-maker".
+3. **Open song.** Delete the open song → the first song in the list opens; with no songs left, a new
+   unsaved song opens and the list says "No songs yet."
+4. **Failure.** Move a song's folder out of the data folder, then delete it in the app → "Delete failed:
+   Song not found".
+5. **Left alone.** Exported WAVs in exports/ stay.
+
+### Results
+- 2026-10-03: `npm test` 162 passing (new, through the HTTP API: delete removes the song folder with its
+  audio and nothing else — other songs, copies, setlists and exports stay; unknown song 404, bad ids 400).
+  App run against a temporary data folder, driven in headless Brave via the DevTools protocol with real
+  mouse events:
+  - Step 1: first click → "Really delete?" shown without hover, song still on the server; after 3 s back to ✕.
+  - Step 2: Way Maker deleted while the open song had unsaved edits → row gone, note as written, song
+    404 on the server, open song still "Unsaved changes"; the setlist shows "Missing: way-maker".
+  - Step 3: deleting the open copy opened "Goodness of God"; deleting the last song → "New song",
+    "Not saved yet", "No songs yet."
+  - Step 4: "Delete failed: Song not found", list unchanged.
+  - Step 5 is covered by the API test. No console errors other than the expected 404s.

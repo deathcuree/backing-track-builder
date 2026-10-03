@@ -55,8 +55,15 @@ async function route(root, req, parts, options) {
   if (resource === 'songs' && parts.length === 2 && rest.length === 0) {
     checkId(id);
     const file = join(root, 'songs', id, 'song.json');
-    allow(req, ['GET', 'PUT']);
+    allow(req, ['GET', 'PUT', 'DELETE']);
     if (req.method === 'GET') return upgradeSong(await readJson(file, () => { throw new HttpError(404, 'Song not found'); }));
+    if (req.method === 'DELETE') {
+      // The song and its audio files go for good; setlists keep the id and show it as missing.
+      const dir = join(root, 'songs', id);
+      if (!(await stat(dir).catch(() => null))?.isDirectory()) throw new HttpError(404, 'Song not found');
+      await rm(dir, { recursive: true });
+      return { deleted: id };
+    }
     const song = await readBody(req);
     if (song?.id !== id) throw new HttpError(400, 'Song id does not match the URL');
     const errors = validateSong(song);

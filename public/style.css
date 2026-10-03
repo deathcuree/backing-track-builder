@@ -124,7 +124,8 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .br-songs li { display: flex; align-items: center; }
 .br-songs li > button { flex: 1; min-width: 0; }
 .br-actions { display: none; gap: 2px; }
-.br-songs li:hover .br-actions, .br-songs li:focus-within .br-actions { display: flex; }
+.br-songs li:hover .br-actions, .br-songs li:focus-within .br-actions, .br-songs .br-armed .br-actions { display: flex; }
+.br-armed .br-actions button { white-space: nowrap; }
 .br-actions button { padding: 0 5px; width: auto; }
 
 /* Arrangement */

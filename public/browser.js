@@ -8,10 +8,10 @@ const GROUPS = [['section', 'Sections'], ['cue', 'Dynamic cues'], ['count', 'Cou
 /**
  * @param {HTMLElement} el
  * @param {{ catalog: object, onOpenSong: (id: string) => void, onNewSong: () => void,
- *           onDuplicateSong: (id: string) => void,
+ *           onDuplicateSong: (id: string) => void, onDeleteSong: (id: string) => void,
  *           onAddCue: (cue: { type: string, key: string }) => void }} handlers
  */
-export function createBrowser(el, { catalog, onOpenSong, onNewSong, onDuplicateSong, onAddCue }) {
+export function createBrowser(el, { catalog, onOpenSong, onNewSong, onDuplicateSong, onDeleteSong, onAddCue }) {
   el.innerHTML = `
     <section class="br-section">
       <div class="br-head"><h2>Songs</h2><button type="button" data-action="new-song" title="New song">+ New</button></div>
@@ -24,11 +24,16 @@ export function createBrowser(el, { catalog, onOpenSong, onNewSong, onDuplicateS
       <div id="br-cue-groups"></div>
     </section>`;
   let language = null;
+  let listed = { songs: [], currentId: null };
+  let deleteArmed = null; // id of the song whose delete button was clicked once
+  let disarmTimer;
 
   el.addEventListener('click', (e) => {
     if (e.target.closest('[data-action="new-song"]')) return onNewSong();
     const duplicate = e.target.closest('[data-duplicate]');
     if (duplicate) return onDuplicateSong(duplicate.dataset.duplicate);
+    const del = e.target.closest('[data-delete]');
+    if (del) return deleteClicked(del.dataset.delete);
     const song = e.target.closest('[data-song]');
     if (song) return onOpenSong(song.dataset.song);
     const cue = e.target.closest('[data-cue-type]');
@@ -41,21 +46,46 @@ export function createBrowser(el, { catalog, onOpenSong, onNewSong, onDuplicateS
     e.dataTransfer.effectAllowed = 'copy';
   });
 
+  // Deleting takes two clicks: the first arms the button ("Really delete?") for 3 seconds.
+  function deleteClicked(id) {
+    clearTimeout(disarmTimer);
+    if (deleteArmed === id) {
+      deleteArmed = null;
+      return onDeleteSong(id);
+    }
+    deleteArmed = id;
+    renderSongList();
+    el.querySelector('[data-delete].warn')?.focus();
+    disarmTimer = setTimeout(() => {
+      deleteArmed = null;
+      renderSongList();
+    }, 3000);
+  }
+
+  function renderSongList() {
+    const { songs, currentId } = listed;
+    el.querySelector('#br-songs').innerHTML = songs.map((s) => `
+      <li ${s.id === deleteArmed ? 'class="br-armed"' : ''}>
+        <button type="button" data-song="${esc(s.id)}" ${s.id === currentId ? 'aria-current="true"' : ''}>
+          <span>${esc(s.title)}</span>
+          <span class="muted small">${esc(s.bpm)} · ${esc(s.meter.join('/'))}</span>
+        </button>
+        <span class="br-actions">
+          ${s.id === deleteArmed
+            ? `<button type="button" class="warn" data-delete="${esc(s.id)}" title="Delete this song and its audio files for good">Really delete?</button>`
+            : `<button type="button" data-duplicate="${esc(s.id)}" title="Duplicate song" aria-label="Duplicate ${esc(s.title)}">⧉</button>
+               <button type="button" data-delete="${esc(s.id)}" title="Delete song" aria-label="Delete ${esc(s.title)}">✕</button>`}
+        </span>
+      </li>`).join('') || '<li class="muted small br-empty">No songs yet.</li>';
+  }
+
   return {
     /** Container for the setlists section. */
     setlistsEl: el.querySelector('#br-setlists'),
     /** @param {{ id: string, title: string, bpm: number, meter: number[] }[]} songs */
     renderSongs(songs, currentId) {
-      el.querySelector('#br-songs').innerHTML = songs.map((s) => `
-        <li>
-          <button type="button" data-song="${esc(s.id)}" ${s.id === currentId ? 'aria-current="true"' : ''}>
-            <span>${esc(s.title)}</span>
-            <span class="muted small">${esc(s.bpm)} · ${esc(s.meter.join('/'))}</span>
-          </button>
-          <span class="br-actions">
-            <button type="button" data-duplicate="${esc(s.id)}" title="Duplicate song" aria-label="Duplicate ${esc(s.title)}">⧉</button>
-          </span>
-        </li>`).join('') || '<li class="muted small br-empty">No songs yet.</li>';
+      listed = { songs, currentId };
+      renderSongList();
     },
     /** Lists the cues for the Cues track's language (English stand-ins are marked EN). */
     renderCues(lang) {

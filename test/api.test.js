@@ -196,7 +196,7 @@ test('old mix keys in settings are ignored', async () => {
 });
 
 test('unsupported methods and unknown API routes', async () => {
-  assert.equal((await call('DELETE', '/api/songs/way-maker')).status, 405);
+  assert.equal((await call('POST', '/api/songs/way-maker')).status, 405);
   assert.equal((await call('GET', '/api/nope')).status, 404);
 });
 
@@ -437,4 +437,32 @@ test('exports must be WAV data for an existing song', async () => {
   assert.equal((await post('/api/exports/no-such-song', Buffer.from('RIFF\0\0\0\0WAVE'))).status, 404);
   assert.equal((await post('/api/exports/..%2Fsettings', Buffer.from('RIFF\0\0\0\0WAVE'))).status, 400);
   assert.equal((await call('GET', '/api/exports/way-maker')).status, 405);
+});
+
+test('deleting a song removes it and its audio files, and nothing else', async () => {
+  assert.ok(existsSync(join(root, 'songs/holy-forever/stems/Band.wav')));
+  await call('PUT', '/api/setlists/sunday', { version: 1, id: 'sunday', name: 'Sunday AM', songs: ['holy-forever', 'way-maker'] });
+  const others = (await call('GET', '/api/songs')).json.filter((s) => s.id !== 'holy-forever');
+  const exports = readdirSync(join(root, 'exports'));
+
+  const del = await call('DELETE', '/api/songs/holy-forever');
+  assert.equal(del.status, 200);
+  assert.deepEqual(del.json, { deleted: 'holy-forever' });
+  assert.ok(!existsSync(join(root, 'songs/holy-forever')));
+  assert.equal((await call('GET', '/api/songs/holy-forever')).status, 404);
+  assert.deepEqual((await call('GET', '/api/songs')).json, others);
+  assert.ok(existsSync(join(root, 'songs/holy-forever-copy-2/stems/Band.wav')));
+  // setlists keep the id and show it as missing; exports are the user's files
+  assert.deepEqual((await call('GET', '/api/setlists/sunday')).json.songs, ['holy-forever', 'way-maker']);
+  assert.deepEqual(readdirSync(join(root, 'exports')), exports);
+});
+
+test('deleting an unknown song or a bad id is refused', async () => {
+  const before = readdirSync(join(root, 'songs')).sort();
+  assert.equal((await call('DELETE', '/api/songs/holy-forever')).status, 404);
+  assert.equal((await call('DELETE', '/api/songs/no-such-song')).status, 404);
+  assert.equal((await call('DELETE', '/api/songs/..%2Fsetlists')).status, 400);
+  assert.equal((await call('DELETE', '/api/songs/..')).status, 400);
+  assert.deepEqual(readdirSync(join(root, 'songs')).sort(), before);
+  assert.ok(existsSync(join(root, 'setlists/sunday.json')));
 });
