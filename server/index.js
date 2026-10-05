@@ -3,6 +3,7 @@
 // samples) come from the project folder; your songs, setlists, settings and exports live in the
 // data folder (see data-dir.js).
 import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { join, resolve, sep, extname } from 'node:path';
@@ -83,6 +84,14 @@ function send(res, status, text) {
   res.end(text);
 }
 
+// Opens the URL in the default browser. Best effort: if it fails, the printed URL still works.
+function openInBrowser(url) {
+  const [command, args] = process.platform === 'darwin' ? ['open', [url]]
+    : process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
+    : ['xdg-open', [url]];
+  spawn(command, args, { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || DEFAULT_PORT;
   const dataDir = defaultDataDir();
@@ -96,7 +105,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     () => {
       console.log(`Backing Track Builder running at http://localhost:${port}`);
       console.log(`Songs, setlists and exports: ${dataDir}`);
-      console.log('Open it in Chrome. Press Ctrl+C to stop.');
+      console.log('Opening it in your browser (it works best in Chrome). Press Ctrl+C to stop.');
+      if (!process.env.NO_OPEN) openInBrowser(`http://localhost:${port}`);
     },
     (err) => {
       console.error(err.code === 'EADDRINUSE'
