@@ -1,10 +1,10 @@
 // JSON API for songs, audio files ("stems"), setlists, settings and exports. Data lives in the data folder:
 // songs/<id>/song.json, songs/<id>/stems/<file>, setlists/<id>.json, settings.json and
 // exports/<title>.wav, so it can be backed up or edited by hand.
-import { readFile, writeFile, rename, mkdir, readdir, stat, unlink, open } from 'node:fs/promises';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { readFile, writeFile, rename, mkdir, readdir, stat, unlink, open, copyFile, rm } from 'node:fs/promises';
+import { createReadStream, createWriteStream, constants } from 'node:fs';
 import { join, extname } from 'node:path';
-import { validateSong, upgradeSong, sanitizeStemName, LIMITS, ID_RE } from '../shared/song.js';
+import { validateSong, upgradeSong, uniqueId, sanitizeStemName, LIMITS, ID_RE } from '../shared/song.js';
 import { validateSetlist } from '../shared/setlist.js';
 
 const MAX_BODY = 1024 * 1024;
@@ -55,8 +55,15 @@ async function route(root, req, parts, options) {
   if (resource === 'songs' && parts.length === 2 && rest.length === 0) {
     checkId(id);
     const file = join(root, 'songs', id, 'song.json');
-    allow(req, ['GET', 'PUT']);
+    allow(req, ['GET', 'PUT', 'DELETE']);
     if (req.method === 'GET') return upgradeSong(await readJson(file, () => { throw new HttpError(404, 'Song not found'); }));
+    if (req.method === 'DELETE') {
+      // The song and its audio files go for good; setlists keep the id and show it as missing.
+      const dir = join(root, 'songs', id);
+      if (!(await stat(dir).catch(() => null))?.isDirectory()) throw new HttpError(404, 'Song not found');
+      await rm(dir, { recursive: true });
+      return { deleted: id };
+    }
     const song = await readBody(req);
     if (song?.id !== id) throw new HttpError(400, 'Song id does not match the URL');
     const errors = validateSong(song);
@@ -64,6 +71,11 @@ async function route(root, req, parts, options) {
     await writeJson(file, song);
     await pruneStems(join(root, 'songs', id, 'stems'), song.tracks);
     return song;
+  }
+  if (resource === 'songs' && rest[0] === 'copy' && parts.length === 3) {
+    checkId(id);
+    allow(req, ['POST']);
+    return copySong(root, id);
   }
   if (resource === 'songs' && rest[0] === 'stems' && parts.length === 3) {
     checkId(id);
@@ -152,6 +164,39 @@ async function uploadStem(root, id, req, maxBytes) {
     return { file, size: tmp.size };
   } catch (err) {
     await unlink(tmp.path).catch(() => {});
+    throw err;
+  }
+}
+
+// Duplicates a saved song as "<title> copy" ("copy 2", "copy 3"…) under a new id, with its own copies
+// of the audio files. song.json is written last, so a copy that fails part-way is never listed.
+async function copySong(root, id) {
+  const source = upgradeSong(await readJson(join(root, 'songs', id, 'song.json'), () => { throw new HttpError(404, 'Song not found'); }));
+  const titles = new Set((await listSongs(root)).map((s) => s.title));
+  let title = `${source.title} copy`;
+  for (let n = 2; titles.has(title); n++) title = `${source.title} copy ${n}`;
+
+  const songsDir = join(root, 'songs');
+  let copyId;
+  let dir;
+  for (;;) {
+    copyId = uniqueId(title, await readdir(songsDir));
+    dir = join(songsDir, copyId);
+    // mkdir claims the folder, so two copies made at once never share one
+    const claimed = await mkdir(dir).then(() => true, (err) => (err.code === 'EEXIST' ? false : Promise.reject(err)));
+    if (claimed) break;
+  }
+  try {
+    const stems = join(songsDir, id, 'stems');
+    const files = (await readdir(stems).catch(() => [])).filter((f) => sanitizeStemName(f) === f);
+    if (files.length) await mkdir(join(dir, 'stems'));
+    // cloned where the disk supports it (instant, no extra space), copied otherwise
+    for (const f of files) await copyFile(join(stems, f), join(dir, 'stems', f), constants.COPYFILE_FICLONE);
+    const copy = { ...source, id: copyId, title };
+    await writeJson(join(dir, 'song.json'), copy);
+    return copy;
+  } catch (err) {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
     throw err;
   }
 }

@@ -196,7 +196,7 @@ test('old mix keys in settings are ignored', async () => {
 });
 
 test('unsupported methods and unknown API routes', async () => {
-  assert.equal((await call('DELETE', '/api/songs/way-maker')).status, 405);
+  assert.equal((await call('POST', '/api/songs/way-maker')).status, 405);
   assert.equal((await call('GET', '/api/nope')).status, 404);
 });
 
@@ -308,6 +308,81 @@ test('overlapping saves all succeed', async () => {
   assert.deepEqual(songs.map((r) => r.status), Array(5).fill(200));
 });
 
+test('a song is duplicated as "<title> copy" with its own id and audio files', async () => {
+  const original = song({ id: 'holy-forever', title: 'Holy Forever', endBar: 40, locators: [{ bar: 5, name: 'Verse' }] });
+  await call('PUT', '/api/songs/holy-forever', original);
+  const band = await upload('holy-forever', 'Band.wav', Buffer.from('band-audio'));
+  const withAudio = { ...original, tracks: [...original.tracks, audioTrack('a1', band.json.file)] };
+  await call('PUT', '/api/songs/holy-forever', withAudio);
+
+  const copy = await call('POST', '/api/songs/holy-forever/copy');
+  assert.equal(copy.status, 200);
+  assert.deepEqual(copy.json, { ...withAudio, id: 'holy-forever-copy', title: 'Holy Forever copy' });
+  assert.deepEqual((await call('GET', '/api/songs/holy-forever-copy')).json, copy.json);
+  const list = (await call('GET', '/api/songs')).json;
+  assert.deepEqual(list.filter((s) => s.id.startsWith('holy-forever')).map((s) => [s.id, s.title]),
+    [['holy-forever', 'Holy Forever'], ['holy-forever-copy', 'Holy Forever copy']]);
+
+  assert.equal(readFileSync(join(root, 'songs/holy-forever-copy/stems/Band.wav'), 'utf8'), 'band-audio');
+  assert.equal(readFileSync(join(root, 'songs/holy-forever/stems/Band.wav'), 'utf8'), 'band-audio');
+  assert.deepEqual((await call('GET', '/api/songs/holy-forever')).json, withAudio);
+});
+
+test('further copies are numbered, and a copy can be copied', async () => {
+  const second = await call('POST', '/api/songs/holy-forever/copy');
+  assert.deepEqual([second.json.id, second.json.title], ['holy-forever-copy-2', 'Holy Forever copy 2']);
+  const third = await call('POST', '/api/songs/holy-forever/copy');
+  assert.deepEqual([third.json.id, third.json.title], ['holy-forever-copy-3', 'Holy Forever copy 3']);
+  const ofCopy = await call('POST', '/api/songs/holy-forever-copy/copy');
+  assert.deepEqual([ofCopy.json.id, ofCopy.json.title], ['holy-forever-copy-copy', 'Holy Forever copy copy']);
+  assert.ok(existsSync(join(root, 'songs/holy-forever-copy-copy/stems/Band.wav')));
+});
+
+test('a copy never takes over a folder that is already in the songs folder', async () => {
+  await call('PUT', '/api/songs/be-thou', song({ id: 'be-thou', title: 'Be Thou' }));
+  mkdirSync(join(root, 'songs/be-thou-copy'), { recursive: true });
+  writeFileSync(join(root, 'songs/be-thou-copy/song.json'), JSON.stringify({ version: 1, id: 'be-thou-copy', title: 'Old' }));
+  const copy = await call('POST', '/api/songs/be-thou/copy');
+  assert.deepEqual([copy.json.id, copy.json.title], ['be-thou-copy-2', 'Be Thou copy']);
+  assert.equal(JSON.parse(readFileSync(join(root, 'songs/be-thou-copy/song.json'), 'utf8')).title, 'Old');
+});
+
+test('editing a copy leaves the original and its audio alone', async () => {
+  const copy = (await call('GET', '/api/songs/holy-forever-copy')).json;
+  const saved = await call('PUT', '/api/songs/holy-forever-copy', { ...copy, title: 'Holy Forever (Acoustic)', tracks: copy.tracks.slice(0, 2) });
+  assert.equal(saved.status, 200);
+  assert.ok(!existsSync(join(root, 'songs/holy-forever-copy/stems/Band.wav')));
+  assert.ok(existsSync(join(root, 'songs/holy-forever/stems/Band.wav')));
+  const original = (await call('GET', '/api/songs/holy-forever')).json;
+  assert.equal(original.title, 'Holy Forever');
+  assert.equal(original.tracks.length, 3);
+});
+
+test('a song saved by the previous version (v2) is copied as version 3', async () => {
+  const v2 = {
+    ...song({ id: 'v2-source', title: 'Second Format' }), version: 2,
+    tracks: [...newSong().tracks,
+      { id: 'a1', type: 'audio', name: 'Band', color: 2, volumeDb: 0, muted: false, output: 'both', clip: { file: 'Band.wav', startSec: 1.5 } }],
+  };
+  mkdirSync(join(root, 'songs/v2-source'), { recursive: true });
+  writeFileSync(join(root, 'songs/v2-source/song.json'), JSON.stringify(v2));
+  const copy = await call('POST', '/api/songs/v2-source/copy');
+  assert.equal(copy.status, 200);
+  assert.equal(copy.json.version, 3);
+  assert.deepEqual(copy.json.tracks[2].clips, [{ file: 'Band.wav', startSec: 1.5, offsetSec: 0, lengthSec: null }]);
+  assert.equal(JSON.parse(readFileSync(join(root, 'songs/second-format-copy/song.json'), 'utf8')).version, 3);
+  assert.equal((await call('PUT', '/api/songs/second-format-copy', copy.json)).status, 200);
+});
+
+test('copying an unknown song, a bad id or with the wrong method is refused', async () => {
+  const before = readdirSync(join(root, 'songs')).sort();
+  assert.equal((await call('POST', '/api/songs/no-such-song/copy')).status, 404);
+  assert.equal((await call('POST', '/api/songs/..%2Fsettings/copy')).status, 400);
+  assert.equal((await call('GET', '/api/songs/holy-forever/copy')).status, 405);
+  assert.equal((await call('PUT', '/api/songs/holy-forever/copy', song())).status, 405);
+  assert.deepEqual(readdirSync(join(root, 'songs')).sort(), before);
+});
+
 test('setlists: save, list, load, survive a restart; invalid ones are refused', async () => {
   assert.deepEqual((await call('GET', '/api/setlists')).json, []);
   const set = { version: 1, id: 'sunday', name: 'Sunday AM', songs: ['way-maker', 'gone-song'] };
@@ -362,4 +437,32 @@ test('exports must be WAV data for an existing song', async () => {
   assert.equal((await post('/api/exports/no-such-song', Buffer.from('RIFF\0\0\0\0WAVE'))).status, 404);
   assert.equal((await post('/api/exports/..%2Fsettings', Buffer.from('RIFF\0\0\0\0WAVE'))).status, 400);
   assert.equal((await call('GET', '/api/exports/way-maker')).status, 405);
+});
+
+test('deleting a song removes it and its audio files, and nothing else', async () => {
+  assert.ok(existsSync(join(root, 'songs/holy-forever/stems/Band.wav')));
+  await call('PUT', '/api/setlists/sunday', { version: 1, id: 'sunday', name: 'Sunday AM', songs: ['holy-forever', 'way-maker'] });
+  const others = (await call('GET', '/api/songs')).json.filter((s) => s.id !== 'holy-forever');
+  const exports = readdirSync(join(root, 'exports'));
+
+  const del = await call('DELETE', '/api/songs/holy-forever');
+  assert.equal(del.status, 200);
+  assert.deepEqual(del.json, { deleted: 'holy-forever' });
+  assert.ok(!existsSync(join(root, 'songs/holy-forever')));
+  assert.equal((await call('GET', '/api/songs/holy-forever')).status, 404);
+  assert.deepEqual((await call('GET', '/api/songs')).json, others);
+  assert.ok(existsSync(join(root, 'songs/holy-forever-copy-2/stems/Band.wav')));
+  // setlists keep the id and show it as missing; exports are the user's files
+  assert.deepEqual((await call('GET', '/api/setlists/sunday')).json.songs, ['holy-forever', 'way-maker']);
+  assert.deepEqual(readdirSync(join(root, 'exports')), exports);
+});
+
+test('deleting an unknown song or a bad id is refused', async () => {
+  const before = readdirSync(join(root, 'songs')).sort();
+  assert.equal((await call('DELETE', '/api/songs/holy-forever')).status, 404);
+  assert.equal((await call('DELETE', '/api/songs/no-such-song')).status, 404);
+  assert.equal((await call('DELETE', '/api/songs/..%2Fsetlists')).status, 400);
+  assert.equal((await call('DELETE', '/api/songs/..')).status, 400);
+  assert.deepEqual(readdirSync(join(root, 'songs')).sort(), before);
+  assert.ok(existsSync(join(root, 'setlists/sunday.json')));
 });

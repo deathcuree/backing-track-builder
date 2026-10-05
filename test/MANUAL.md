@@ -373,3 +373,70 @@ Setup: a song with an audio track (a stem or a full mix).
     decoding slowed down on purpose).
   - Step 5: Cmd+E with the Clip start field focused → no split; Cmd+S → saved with the clips as shown.
   - No console errors. Not checked by ear.
+
+
+## BTB-15: Duplicate song
+
+Setup: two saved songs, one with an audio track.
+
+1. **Duplicate.** Hover a song in the Songs list (or Tab to it): a ⧉ button appears on the right. Click it
+   on a song that is not open → "Way Maker copy" appears in the list and opens, saved, with the same
+   tracks, cues, locators and audio. The status bar says "Duplicated as “Way Maker copy”." Play it: the
+   audio plays.
+2. **Independent.** In the copy, delete the audio track and save. Open the original: its audio track is
+   still there and plays.
+3. **Numbering.** Duplicate the same song again → "Way Maker copy 2". Duplicate a copy → "Way Maker copy copy".
+4. **Unsaved changes.** Change the open song's title, then click ⧉ on any song: the Save / Discard / Cancel
+   prompt comes first. Cancel → no new song, the edit is still there. Discard → the copy is made and
+   opens (a copy of the open song has the saved version). Save → the song is saved, then copied (a copy of
+   the open song includes the edit).
+5. **Failure.** With the app open, move a song's folder out of the data folder and click its ⧉ →
+   "Duplicate failed: Song not found"; the open song and the list don't change.
+6. **Left alone.** The copy is in no setlist, and exports/ has no new file.
+
+### Results
+- 2026-10-03: `npm test` 160 passing (new, through the HTTP API: a copy has the new title and id and the
+  same content; audio files are copied and the original keeps its own; "copy 2"/"copy 3" numbering and a
+  copy of a copy; an existing folder is never taken over; saving the copy with its audio track removed
+  leaves the original's audio; a version-2 song is copied as version 3; unknown song 404, bad id 400,
+  GET/PUT 405, none of them creating a folder). App run against a temporary data folder (two songs, one
+  with a 4 s WAV), driven in headless Brave via the DevTools protocol with real mouse events:
+  - Step 1: button hidden until hover (and shown with keyboard focus in the row); click on Way Maker
+    (not open) → "Way Maker copy" listed and open, "Saved", note as written; its Band.wav is served
+    (176 444 bytes) and the waveform draws.
+  - Step 3: a second copy → "Way Maker copy 2" (id way-maker-copy-2).
+  - Step 4: prompt shown; Cancel → list unchanged, still "Unsaved changes"; Discard → "Goodness of God
+    copy" made and opened; title edited to "Goodness of God Live copy", ⧉ on that open song, Save →
+    saved under that title and "Goodness of God Live copy copy" opened.
+  - Step 5: folder moved away → "Duplicate failed: Song not found", list and open song unchanged.
+  - No console errors other than the expected 404 in step 5.
+  - Steps 2 and 6 are covered by the API tests, not driven in the browser. Not checked by ear.
+
+
+## Delete song
+
+Setup: three saved songs, one of them in a setlist.
+
+1. **Two clicks.** Hover a song in the Songs list and click ✕: the button turns into a red "Really
+   delete?" and stays visible. Wait 3 seconds without clicking → it goes back to ✕ and nothing is deleted.
+2. **Delete.** Click ✕ then "Really delete?" on a song that is not open → it leaves the list, the status
+   bar says "Deleted “Way Maker”.", and its folder (song and audio) is gone from the data folder. The
+   open song, including unsaved changes, is untouched. In a setlist the song shows as "Missing: way-maker".
+3. **Open song.** Delete the open song → the first song in the list opens; with no songs left, a new
+   unsaved song opens and the list says "No songs yet."
+4. **Failure.** Move a song's folder out of the data folder, then delete it in the app → "Delete failed:
+   Song not found".
+5. **Left alone.** Exported WAVs in exports/ stay.
+
+### Results
+- 2026-10-03: `npm test` 162 passing (new, through the HTTP API: delete removes the song folder with its
+  audio and nothing else — other songs, copies, setlists and exports stay; unknown song 404, bad ids 400).
+  App run against a temporary data folder, driven in headless Brave via the DevTools protocol with real
+  mouse events:
+  - Step 1: first click → "Really delete?" shown without hover, song still on the server; after 3 s back to ✕.
+  - Step 2: Way Maker deleted while the open song had unsaved edits → row gone, note as written, song
+    404 on the server, open song still "Unsaved changes"; the setlist shows "Missing: way-maker".
+  - Step 3: deleting the open copy opened "Goodness of God"; deleting the last song → "New song",
+    "Not saved yet", "No songs yet."
+  - Step 4: "Delete failed: Song not found", list unchanged.
+  - Step 5 is covered by the API test. No console errors other than the expected 404s.

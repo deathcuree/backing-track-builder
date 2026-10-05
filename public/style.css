@@ -121,6 +121,12 @@ input[type="checkbox"] { accent-color: var(--accent); }
 .br-cue { justify-content: flex-start !important; }
 .br-tag { font-size: 10px; color: var(--muted); border: 1px solid var(--panel-3); border-radius: 2px; padding: 0 3px; }
 .br-empty { padding: 3px 6px; }
+.br-songs li { display: flex; align-items: center; }
+.br-songs li > button { flex: 1; min-width: 0; }
+.br-actions { display: none; gap: 2px; }
+.br-songs li:hover .br-actions, .br-songs li:focus-within .br-actions, .br-songs .br-armed .br-actions { display: flex; }
+.br-armed .br-actions button { white-space: nowrap; }
+.br-actions button { padding: 0 5px; width: auto; }
 
 /* Arrangement */
 .arrangement { grid-area: arr; background: var(--panel-2); min-height: 0; position: relative; }
